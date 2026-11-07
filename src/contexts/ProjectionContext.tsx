@@ -73,9 +73,9 @@ export function ProjectionProvider({ children }: { children: ReactNode }) {
     const ageAtRetirement = p.currentAge + yearsToRetirement
     return sum + getOasIncomeAtAge(OAS_MAX_ANNUAL_2026, p.oasStartAge, ageAtRetirement)
   }, 0)
-  const allAccounts = people.flatMap(p => p.accounts)
-  const totalPortfolio = allAccounts.reduce((sum, acc) => sum + (acc.balance || 0), 0)
-  const totalAnnualContributions = allAccounts.reduce((sum, acc) => sum + (acc.annualContribution || 0), 0)
+  // All account types count, not only the RRSP/TFSA shown by the v1 forms.
+  const totalPortfolio = activePlan.accounts.reduce((sum, acc) => sum + (acc.balance || 0), 0)
+  const totalAnnualContributions = activePlan.accounts.reduce((sum, acc) => sum + (acc.contributions[0]?.amount ?? 0), 0)
 
   const guaranteedIncomeSchedule = useMemo(
     () => buildGuaranteedIncomeSchedule({ people, householdRetirementAge, yearsToRetirement }),

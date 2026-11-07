@@ -5,10 +5,6 @@ interface AssumptionsPanelProps {
   setExpectedReturn: (value: number) => void
   inflationRate: number
   setInflationRate: (value: number) => void
-  replacementRate: number
-  setReplacementRate: (value: number) => void
-  withdrawalRate: number
-  setWithdrawalRate: (value: number) => void
   reinvestRrspRefund: boolean
   setReinvestRrspRefund: (value: boolean) => void
 }
@@ -64,10 +60,6 @@ export function AssumptionsPanel({
   setExpectedReturn,
   inflationRate,
   setInflationRate,
-  replacementRate,
-  setReplacementRate,
-  withdrawalRate,
-  setWithdrawalRate,
   reinvestRrspRefund,
   setReinvestRrspRefund,
 }: AssumptionsPanelProps) {
@@ -92,24 +84,6 @@ export function AssumptionsPanel({
           max={10}
           step={0.5}
           onChange={setInflationRate}
-        />
-        <AssumptionField
-          label="Income Target"
-          tooltip="% of pre-retirement income needed in retirement"
-          value={replacementRate}
-          min={0}
-          max={100}
-          step={5}
-          onChange={setReplacementRate}
-        />
-        <AssumptionField
-          label="Withdrawal Rate"
-          tooltip="Safe annual withdrawal % (4% rule)"
-          value={withdrawalRate}
-          min={1}
-          max={10}
-          step={0.1}
-          onChange={setWithdrawalRate}
         />
         <label className="flex items-start gap-2 text-xs text-gray-600 dark:text-gray-300 cursor-pointer">
           <input

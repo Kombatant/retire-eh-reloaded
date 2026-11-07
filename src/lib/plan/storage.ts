@@ -5,17 +5,51 @@ import { createDefaultPlan } from './defaults'
 
 export const STORE_KEY = 'retireEh.v2'
 
+// A dated record of actual account balances (net-worth tracking).
+export interface Snapshot {
+  id: string
+  planId: string
+  date: string // YYYY-MM-DD
+  balances: Record<string, number> // accountId → balance
+  total: number
+}
+
+// A saved projection to compare actual balances against.
+export interface Baseline {
+  planId: string
+  date: string
+  // Projected end-of-year portfolio (nominal) by calendar year.
+  portfolio: { year: number; value: number }[]
+}
+
 export interface StoreState {
   activePlanId: string
   plans: PlanV2[]
   uiPrefs: UiPrefs
+  snapshots: Snapshot[]
+  baselines: Baseline[]
 }
+
+const snapshotSchema = z.object({
+  id: z.string(),
+  planId: z.string(),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  balances: z.record(z.string(), z.number()),
+  total: z.number(),
+})
+const baselineSchema = z.object({
+  planId: z.string(),
+  date: z.string(),
+  portfolio: z.array(z.object({ year: z.number(), value: z.number() })),
+})
 
 const storeFileSchema = z.object({
   schemaVersion: z.literal(2),
   activePlanId: z.string(),
   plans: z.array(z.unknown()),
   uiPrefs: uiPrefsSchema.prefault({}),
+  snapshots: z.array(snapshotSchema).catch([]).default([]),
+  baselines: z.array(baselineSchema).catch([]).default([]),
 })
 
 type KeyValueStore = Pick<Storage, 'getItem'>
@@ -87,7 +121,14 @@ export function loadStore(storage: KeyValueStore, now: Date): StoreState {
       .flatMap(r => (r.success ? [r.plan] : []))
     if (plans.length > 0) {
       const activePlanId = plans.some(p => p.id === stored.data.activePlanId) ? stored.data.activePlanId : plans[0].id
-      return { activePlanId, plans, uiPrefs: stored.data.uiPrefs }
+      const ids = new Set(plans.map(p => p.id))
+      return {
+        activePlanId,
+        plans,
+        uiPrefs: stored.data.uiPrefs,
+        snapshots: stored.data.snapshots.filter(snap => ids.has(snap.planId)),
+        baselines: stored.data.baselines.filter(b => ids.has(b.planId)),
+      }
     }
   }
 
@@ -99,12 +140,14 @@ export function loadStore(storage: KeyValueStore, now: Date): StoreState {
         activePlanId: result.plan.id,
         plans: [result.plan],
         uiPrefs: uiPrefsSchema.parse(result.uiPrefs),
+        snapshots: [],
+        baselines: [],
       }
     }
   }
 
   const plan = createDefaultPlan(now)
-  return { activePlanId: plan.id, plans: [plan], uiPrefs: uiPrefsSchema.parse({}) }
+  return { activePlanId: plan.id, plans: [plan], uiPrefs: uiPrefsSchema.parse({}), snapshots: [], baselines: [] }
 }
 
 // Returns null when a plan is mid-edit and invalid (e.g. an emptied number

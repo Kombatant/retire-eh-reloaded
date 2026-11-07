@@ -5,6 +5,7 @@ import { PlanStoreProvider, usePlanStore } from '@/contexts/PlanStoreContext'
 import { useAssumptions } from '@/contexts/AssumptionsContext'
 import { ProjectionProvider } from '@/contexts/ProjectionContext'
 import { usePersistence } from '@/hooks/usePersistence'
+import { useAutoRefreshQuotes } from '@/hooks/useStockQuotes'
 import { exportToYAML, downloadYAML, uploadYAML, type ImportedPlan } from '@/lib/yaml-utils'
 import { buildShareUrl, clearShareHash, readSharePlanFromUrl } from '@/lib/share-link'
 import { Header } from '@/components/Header'
@@ -14,9 +15,13 @@ import { PlanTab } from '@/components/dashboard/PlanTab'
 import { OverviewTab } from '@/components/dashboard/OverviewTab'
 import { ProjectionsTab } from '@/components/dashboard/ProjectionsTab'
 import { LearnTab } from '@/components/dashboard/LearnTab'
+import { RiskTab } from '@/components/dashboard/RiskTab'
+import { CashFlowTab } from '@/components/dashboard/CashFlowTab'
+import { CompareTab } from '@/components/dashboard/CompareTab'
+import { TrackingTab } from '@/components/dashboard/TrackingTab'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 
-type TabId = 'overview' | 'plan' | 'projections' | 'learn'
+type TabId = 'overview' | 'plan' | 'projections' | 'cashflow' | 'risk' | 'compare' | 'tracking' | 'learn'
 
 function AppContent() {
   const [activeTab, setActiveTab] = useState<TabId>('plan')
@@ -24,6 +29,7 @@ function AppContent() {
   const store = usePlanStore()
   const assumptions = useAssumptions()
   const { localStorageError, setLocalStorageError } = usePersistence()
+  useAutoRefreshQuotes()
   const [pendingSharedPlan, setPendingSharedPlan] = useState<ImportedPlan | null>(() =>
     readSharePlanFromUrl(window.location.href)
   )
@@ -84,6 +90,14 @@ function AppContent() {
         return <OverviewTab />
       case 'projections':
         return <ProjectionsTab />
+      case 'cashflow':
+        return <CashFlowTab />
+      case 'risk':
+        return <RiskTab />
+      case 'compare':
+        return <CompareTab />
+      case 'tracking':
+        return <TrackingTab />
       case 'learn':
         return <LearnTab />
     }

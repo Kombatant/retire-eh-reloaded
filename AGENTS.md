@@ -26,7 +26,11 @@ The application is 100% pure TypeScript (React + Vite). All calculations run cli
   - `simulate(compiled, marketPath)` runs a year-by-year household simulation in nominal dollars.
   - `legacyAdapter.ts` turns the output into the series the existing charts use.
   - Deterministic projections, scenario bands and (later) Monte Carlo and backtests all reuse `simulate`.
-- **Monte Carlo** (`src/lib/projectionSim.ts`): still the original implementation, until it moves onto `simulate`.
+- **Risk** (`src/lib/sim/risk.ts`, `paths/`): Monte Carlo (correlated lognormal asset returns plus AR(1) inflation, seeded), historical backtest over `src/data/historical/canada-annual.json`, and crash overlays. All run on `simulate`.
+  - The Risk tab runs them in a Web Worker (`src/workers/sim.worker.ts`) through `useRiskAnalysis`.
+  - Results stream in batches and are cached by plan.
+  - In tests, where jsdom has no Worker, a small sample runs synchronously instead.
+- **Insights** (`src/lib/insights/`): Sankey data, CSV export, FI and Coast FI, milestones, plan comparison and tax-bracket position. Each is a pure, tested helper.
 - **Original engine** (`src/lib/legacy/`): kept only as the reference for `src/test/sim-parity.test.ts`.
 
 ## GitHub Actions
@@ -56,14 +60,20 @@ The application is 100% pure TypeScript (React + Vite). All calculations run cli
 
 ### Tab Navigation
 
-The app uses a horizontal tab layout with 4 sections:
+The app uses a horizontal tab layout with 8 sections:
 
 | Tab | Purpose | Default |
 |-----|---------|---------|
-| Plan | Input: people, accounts, assumptions | Yes |
-| Overview | Summary card, portfolio breakdown, income breakdown, goal progress | No |
-| Projections | Growth charts, contribution split, Monte Carlo volatility, retirement drawdown | No |
+| Plan | Inputs: people, accounts, income, spending, real estate & debts, drawdown, assumptions | Yes |
+| Overview | Summary, portfolio, income breakdown, goal progress, tax detail, milestones, estate | No |
+| Projections | Growth charts, contribution split, retirement drawdown, benefit timing | No |
+| Cash Flow | Yearly Sankey, tax by year, bracket room, year-by-year table with CSV export | No |
+| Risk | Monte Carlo fan chart and success rate, historical backtest, stress tests | No |
+| Compare | 2–3 saved plans side by side | No |
+| Tracking | Dated balance snapshots, actual vs. projected, rebaseline | No |
 | Learn | Educational content about methodology | No |
+
+The header has a plan switcher: new, duplicate, rename and delete.
 
 ### Component Structure
 
@@ -72,29 +82,20 @@ App.tsx (provider shell)
 ├── PlanStoreProvider
 │   └── ProjectionProvider
 │       └── AppContent
-│               ├── Header.tsx (logo, export/import, dark mode)
-│               ├── Tabs.tsx (tab navigation)
-│               ├── Tab Content (one active at a time)
-│               │   ├── OverviewTab.tsx
-│               │   │   ├── SummaryCard.tsx
-│               │   │   ├── PortfolioCard.tsx
-│               │   │   ├── IncomeBreakdownCard.tsx
-│               │   │   ├── RetirementProjectionCard.tsx
-│               │   │   └── GoalsCard.tsx
-│               │   ├── PlanTab.tsx
-│               │   │   ├── PersonSelector.tsx
-│               │   │   ├── PersonForm.tsx
-│               │   │   │   └── AccountCard.tsx
-│               │   │   └── AssumptionsPanel.tsx
-│               │   ├── ProjectionsTab.tsx
-│               │   │   ├── GrowthChart.tsx
-│               │   │   ├── ContributionGrowthChart.tsx
-│               │   │   ├── MonteCarloChart.tsx
-│               │   │   └── DrawdownChart.tsx
-│               │   └── LearnTab.tsx
-│               └── Footer.tsx (version display)
-├── ErrorBoundary (shell-level)
-└── ErrorBoundary (tab-level, wrapping tab content)
+│           ├── Header.tsx (logo, PlanSwitcher, export/import/share, dollars toggle, dark mode)
+│           ├── Tabs.tsx
+│           ├── Tab content (one active at a time, inside an ErrorBoundary)
+│           │   ├── PlanTab.tsx
+│           │   │   ├── PersonSelector / PersonForm
+│           │   │   │   ├── PersonDetails (province, horizon, OAS residency, CPP, room)
+│           │   │   │   └── AccountsSection (all account types)
+│           │   │   ├── IncomePanel, AssumptionsPanel, SpendingPanel
+│           │   │   └── RealEstatePanel, DrawdownPanel
+│           │   ├── OverviewTab.tsx (Summary, Portfolio, Goals, RetirementTaxTable, MilestonesCard, EstateCard, …)
+│           │   ├── ProjectionsTab.tsx (Growth, ContributionGrowth, Drawdown, RetirementCashFlowTable, BenefitTiming)
+│           │   ├── CashFlowTab.tsx, RiskTab.tsx, CompareTab.tsx, TrackingTab.tsx
+│           │   └── LearnTab.tsx
+│           └── Footer.tsx
 ```
 
 ### State Management
@@ -118,25 +119,20 @@ App.tsx (provider shell)
 
 ## Testing
 
-### Frontend (218 tests)
-- `src/test/engine.test.ts` - Original (legacy) engine unit tests
-- `src/test/sim-parity.test.ts` - Unified engine matches the original engine within $1
-- `src/test/rng.test.ts` - Seeded PRNG
-- `src/test/cpp.test.ts` - CPP start-age adjustment factor and income-gating tests
-- `src/test/tax.test.ts` - Original Quebec estimator (v1 parity path)
-- `src/test/tax-provinces.test.ts` - All-province 2026 tax, payroll, splitting, OAS/GIS/CPP benefits
-- `src/test/sim-v2.test.ts` - Engine behaviour under current (v2) rules
-- `src/test/people-context.test.tsx` - usePeople compatibility hook tests (CRUD, selection, import)
-- `src/test/plan-migration.test.ts` - v1 → v2 migration, legacy localStorage, plan storage, plan edits
-- `src/test/plan-store.test.tsx` - multi-plan store and persistence
-- `src/test/app-smoke.test.tsx` - renders every tab; loads a v1-saved plan
-- `src/test/validation.test.ts` - Zod validation tests
-- `src/test/yaml-utils.test.ts` - YAML import/export tests
-- `src/test/setup.test.ts` - Test harness verification
+### Frontend tests (`npm test`)
+- `plan-migration`, `plan-store`, `people-context`, `yaml-utils`, `share-link`, `validation`: data model, v1 → v2 migration, storage, import/export.
+- `sim-parity`: the unified engine with v1 rules matches the original engine within $1. `engine`, `retirement-cash-flow`, `tax`, `cpp`, `oas*` cover the original modules.
+- `tax-provinces`: hand-computed golden tax values, every jurisdiction, payroll, splitting, OAS/GIS/CPP.
+- `sim-v2`, `sim-accounts`, `sim-spending`, `sim-drawdown`: engine behaviour (tax ownership, refunds, account types, room, income streams, budgets, real estate, RRIF/LIF, strategies, survivors, estate).
+- `sim-risk`, `rng`: Monte Carlo, backtest, crash scenarios.
+- `insights`: Sankey, CSV, FI metrics, milestones, comparison, brackets.
+- `cpp-history`: CPP/QPP estimate from work history.
+- `sim-stocks`, `stock-quotes`: stock holdings, RSU/ESPP, sell plans, scenarios, quote providers (mocked fetch).
+- `projection-consistency`, `narrative`, `app-smoke` (renders every tab).
 
 ### Shared Utilities
-- `src/lib/sim/` - Unified year-by-year simulation engine
-- `src/lib/projectionSim.ts` - Monte Carlo stochastic uncertainty simulation & drawdown
+- `src/lib/sim/` - Unified year-by-year simulation engine (`steps/`: debts, solver, RRIF/LIF, spending strategies)
+- `src/lib/sim/risk.ts` - Monte Carlo, historical backtest and stress tests on the unified engine
 - `src/lib/tax/`:
   - `data/2026.ts`: 2026 tables for federal and all 13 jurisdictions, with sources. Update this file yearly.
   - `personal.ts`: income tax for one person.
@@ -144,6 +140,14 @@ App.tsx (provider shell)
   - `payroll.ts`: CPP/QPP/EI.
   - `quebecLegacy.ts`: the original v1 estimator.
 - `src/lib/benefits/`: CPP/QPP estimate and survivor pension, OAS (residency, deferral, +10% at 75), GIS.
+- `src/lib/market/quotes.ts`: live stock quotes, fetched from the browser.
+  - Providers: Twelve Data or Alpha Vantage, with the user's free API key.
+  - USD→CAD conversion uses the Bank of Canada Valet API.
+  - The key is stored in localStorage (`retireEh.marketData`) and never in the plan, so it isn't exported or shared.
+  - `useAutoRefreshQuotes` (in App) refreshes stale prices once a day.
+- Stock portfolio accounts (`type: 'STOCK'`): holdings with vested shares, unvested RSU tranches, ESPP, a bear/base/bull price projection, and a sell plan.
+  - Vesting and the ESPP benefit are taxed as employment income.
+  - `src/lib/insights/stockScenarios.ts` compares the three cases with and without the sell plan.
 - `src/lib/formatting.ts` - `formatMoney()`, `formatCompactMoney()` for all currency display
 - `src/hooks/useRetirementGoal.ts` - Shared goal calculation hook
 - `src/lib/validation.ts` - Zod schemas for YAML import and form validation

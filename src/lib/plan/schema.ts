@@ -46,6 +46,20 @@ const cppSchema = z.discriminatedUnion('mode', [
     averageEarningsRatioPct: percent(0, 100),
     contributoryYears: z.number().int().min(0).max(50),
   }),
+  // Estimated from a simple work history; see estimateCppFromHistory.
+  z.object({
+    mode: z.literal('history'),
+    startedWorkingYear: calendarYear,
+    // Typical yearly earnings over the career, in today's dollars.
+    // Undefined: use the person's current salary.
+    typicalEarnings: money.optional(),
+    // Years between starting work and 65 with no CPP/QPP earnings
+    // (time abroad, school, unemployment).
+    yearsNotWorking: z.number().int().min(0).max(47).default(0),
+    // Years at home with a child under 7: dropped from the calculation
+    // (child-rearing provision) instead of counting as zero.
+    childRearingYears: z.number().int().min(0).max(47).default(0),
+  }),
 ])
 
 export const personSchema = z.object({
@@ -72,7 +86,7 @@ export type PersonV2 = z.infer<typeof personSchema>
 
 // --- Accounts ---------------------------------------------------------------
 
-export const ACCOUNT_TYPES = ['RRSP', 'RRIF', 'TFSA', 'FHSA', 'LIRA', 'LIF', 'NONREG', 'CASH'] as const
+export const ACCOUNT_TYPES = ['RRSP', 'RRIF', 'TFSA', 'FHSA', 'LIRA', 'LIF', 'NONREG', 'CASH', 'STOCK'] as const
 export const accountTypeSchema = z.enum(ACCOUNT_TYPES)
 export type AccountType = z.infer<typeof accountTypeSchema>
 
@@ -104,6 +118,74 @@ const accountBase = {
 
 const lockedInJurisdiction = provinceSchema.or(z.literal('FED')).optional()
 
+// --- Individual stock holdings (stock portfolio account) ---------------------
+
+export const STOCK_SCENARIOS = ['bear', 'base', 'bull'] as const
+export type StockScenario = (typeof STOCK_SCENARIOS)[number]
+
+// Unvested RSUs/PSUs: shares that vest on a date. The value at vesting is
+// employment income and becomes the shares' cost base.
+export const rsuGrantSchema = z.object({
+  id,
+  shares: z.number().min(0),
+  vestAt: timePointSchema,
+})
+export type RsuGrant = z.infer<typeof rsuGrantSchema>
+
+// Employee share purchase plan: payroll contributions buy shares at a
+// discount, sometimes with an employer match. The discount and match are a
+// taxable employment benefit.
+export const esppSchema = z.object({
+  annualContribution: money, // employee, plan-start dollars
+  discountPct: percent(0, 50).default(15),
+  employerMatchPct: percent(0, 200).default(0),
+  from: timePointSchema.optional(), // default: now
+  to: timePointSchema.optional(), // default: owner's retirement
+  indexed: z.boolean().default(true),
+})
+export type Espp = z.infer<typeof esppSchema>
+
+export const holdingSchema = z.object({
+  id,
+  symbol: z.string().default(''),
+  shares: z.number().min(0),
+  price: money, // current price per share (CAD)
+  costPerShare: money.optional(), // undefined = current price (no gain)
+  dividendYieldPct: percent(0, 20).default(0),
+  // Canadian eligible dividends get the dividend tax credit; foreign dividends are ordinary income.
+  dividendType: z.enum(['eligible', 'foreign']).default('eligible'),
+  // Annual price growth (excluding dividends) for each projection case.
+  growthPct: z.object({
+    bear: percent(-50, 50).default(0),
+    base: percent(-50, 50).default(5),
+    bull: percent(-50, 100).default(10),
+  }).prefault({}),
+  // Annual standard deviation for Monte Carlo; single stocks are volatile.
+  volatilityPct: percent(0, 150).default(30),
+  rsuGrants: z.array(rsuGrantSchema).default([]),
+  espp: esppSchema.optional(),
+  // Last market quote used to set `price` (price is always CAD).
+  lastQuote: z.object({
+    price: z.number().min(0), // in the quote currency
+    currency: z.string().min(3).max(3),
+    fxToCad: z.number().positive(),
+    asOf: z.string(), // ISO date-time of the quote
+    fetchedAt: z.string(), // when this app fetched it
+    source: z.string(),
+  }).optional(),
+})
+export type Holding = z.infer<typeof holdingSchema>
+
+// Selling stock every year to fund retirement.
+export const stockSalePlanSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('none') }),
+  // Sell enough to raise this much each year (plan-start dollars).
+  z.object({ kind: z.literal('fixedAmount'), amount: money, from: timePointSchema.optional(), to: timePointSchema.optional() }),
+  // Sell stock first, before other accounts, to cover what spending needs.
+  z.object({ kind: z.literal('coverGap'), from: timePointSchema.optional(), to: timePointSchema.optional() }),
+])
+export type StockSalePlan = z.infer<typeof stockSalePlanSchema>
+
 export const accountSchema = z.discriminatedUnion('type', [
   z.object({ ...accountBase, type: z.literal('RRSP') }),
   z.object({ ...accountBase, type: z.literal('RRIF') }),
@@ -129,6 +211,14 @@ export const accountSchema = z.discriminatedUnion('type', [
     }).optional(),
   }),
   z.object({ ...accountBase, type: z.literal('CASH') }),
+  // A non-registered account of individual stocks. Its balance is derived
+  // from the holdings (shares × price).
+  z.object({
+    ...accountBase,
+    type: z.literal('STOCK'),
+    holdings: z.array(holdingSchema).default([]),
+    salePlan: stockSalePlanSchema.default({ kind: 'none' }),
+  }),
 ])
 export type AccountV2 = z.infer<typeof accountSchema>
 
@@ -196,6 +286,10 @@ export const expensesSchema = z.object({
   // detailed: spending is the sum of all items.
   mode: z.enum(['simple', 'detailed']).default('simple'),
   replacementRate: percent(0, 200).default(70),
+  // Detailed mode, working years: invest any cash left after spending and
+  // contributions ('save'), or leave it out of the projection ('ignore').
+  // Shortfalls are always funded from the portfolio.
+  surplusPolicy: z.enum(['ignore', 'save']).default('ignore'),
   phases: z.array(expensePhaseSchema).default([]),
   items: z.array(expenseItemSchema).default([]),
 })
@@ -256,7 +350,7 @@ export type SpendingStrategy = z.infer<typeof spendingStrategySchema>
 export const drawdownSchema = z.object({
   strategy: spendingStrategySchema.default({ kind: 'initialPct', ratePct: 4 }),
   order: z.enum(['proRata', 'custom']).default('proRata'),
-  customOrder: z.array(accountTypeSchema).default(['CASH', 'NONREG', 'RRIF', 'RRSP', 'LIF', 'LIRA', 'FHSA', 'TFSA']),
+  customOrder: z.array(accountTypeSchema).default(['CASH', 'STOCK', 'NONREG', 'RRIF', 'RRSP', 'LIF', 'LIRA', 'FHSA', 'TFSA']),
   rrifConversionAge: z.number().int().min(55).max(71).default(71),
   rrifUseYoungerSpouseAge: z.boolean().default(false),
   meltdown: z.object({
@@ -276,8 +370,44 @@ export const assumptionsSchema = z.object({
   // tax engine computes working-year tax directly.
   workingMarginalTaxRate: percent(0, 60).default(30),
   reinvestRrspRefund: z.boolean().default(false),
+  // Which price-growth case to use for individual stocks in projections.
+  stockScenario: z.enum(STOCK_SCENARIOS).default('base'),
+  // Long-run nominal returns per asset class, used for accounts with an
+  // allocation. Defaults follow the FP Canada projection assumption guidelines.
+  assetReturns: z.object({
+    equityPct: percent(-10, 30).default(6.6),
+    bondPct: percent(-10, 30).default(3.4),
+    cashPct: percent(-10, 30).default(2.4),
+  }).prefault({}),
+  // Market uncertainty for Monte Carlo (annual standard deviations, %).
+  simulation: z.object({
+    runs: z.number().int().min(50).max(5000).default(500),
+    seed: z.number().int().min(0).default(2026),
+    portfolioVolPct: percent(0, 50).default(11),
+    equityVolPct: percent(0, 60).default(16),
+    bondVolPct: percent(0, 30).default(6),
+    cashVolPct: percent(0, 10).default(1),
+    stochasticInflation: z.boolean().default(true),
+    inflationVolPct: percent(0, 10).default(1.2),
+    // Year-to-year persistence of inflation shocks (AR(1) coefficient).
+    inflationPersistence: z.number().min(0).max(0.95).default(0.6),
+    // Mix used for accounts without an allocation in historical backtests.
+    historicalMix: z.object({
+      equity: percent(0, 100).default(60),
+      bond: percent(0, 100).default(40),
+      cash: percent(0, 100).default(0),
+    }).prefault({}),
+  }).prefault({}),
 })
 export type AssumptionsV2 = z.infer<typeof assumptionsSchema>
+
+// --- Estate -----------------------------------------------------------------
+
+export const estateSchema = z.object({
+  // Include provincial probate fees in the after-tax legacy estimate.
+  probate: z.boolean().default(true),
+})
+export type EstateSettings = z.infer<typeof estateSchema>
 
 // --- Plan -------------------------------------------------------------------
 
@@ -295,6 +425,7 @@ export const planSchema = z.object({
   debts: z.array(debtSchema).default([]),
   drawdown: drawdownSchema.prefault({}),
   assumptions: assumptionsSchema.prefault({}),
+  estate: estateSchema.prefault({}),
 }).superRefine((plan, ctx) => {
   const personIds = new Set(plan.people.map(p => p.id))
   if (personIds.size !== plan.people.length) {

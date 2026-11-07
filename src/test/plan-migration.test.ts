@@ -103,7 +103,7 @@ describe('v1 → v2 migration', () => {
   it('moves assumptions and display prefs to their new homes', () => {
     expect(plan.expenses).toMatchObject({ mode: 'simple', replacementRate: 65 })
     expect(plan.drawdown.strategy).toEqual({ kind: 'initialPct', ratePct: 3.8 })
-    expect(plan.assumptions).toEqual({ expectedReturn: 6, inflationRate: 2.1, workingMarginalTaxRate: 37, reinvestRrspRefund: true })
+    expect(plan.assumptions).toMatchObject({ expectedReturn: 6, inflationRate: 2.1, workingMarginalTaxRate: 37, reinvestRrspRefund: true })
     expect(uiPrefs).toEqual({ showRealValues: false })
   })
 
@@ -170,10 +170,11 @@ describe('plan storage', () => {
     storage.setItem('people', JSON.stringify(v1.people))
     const a = createDefaultPlan(NOW, 'A')
     const b = migrateV1ToV2(v1, { now: NOW, id: 'b', name: 'B' }).plan
-    storage.setItem(STORE_KEY, serializeStore({ activePlanId: 'b', plans: [a, b], uiPrefs: { showRealValues: false } })!)
+    storage.setItem(STORE_KEY, serializeStore({ activePlanId: 'b', plans: [a, b], uiPrefs: { showRealValues: false }, snapshots: [], baselines: [] })!)
 
     const state = loadStore(storage, NOW)
     expect(state.plans).toEqual([a, b])
+    expect(state.snapshots).toEqual([])
     expect(state.activePlanId).toBe('b')
     expect(state.uiPrefs.showRealValues).toBe(false)
   })
@@ -191,7 +192,7 @@ describe('plan storage', () => {
   it('skips writing while a plan is mid-edit and invalid', () => {
     const plan = createDefaultPlan(NOW)
     const editing = updateLegacyPersonField(plan, plan.people[0].id, 'currentAge', NaN, YEAR)
-    expect(serializeStore({ activePlanId: plan.id, plans: [editing], uiPrefs: { showRealValues: true } })).toBeNull()
+    expect(serializeStore({ activePlanId: plan.id, plans: [editing], uiPrefs: { showRealValues: true }, snapshots: [], baselines: [] })).toBeNull()
   })
 })
 

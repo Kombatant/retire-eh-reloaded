@@ -24,7 +24,7 @@ describe('App smoke test', () => {
   it('renders every tab without hitting an error boundary', async () => {
     render(<App />)
     const nav = screen.getByRole('navigation', { name: 'Tabs' })
-    for (const label of ['Plan', 'Overview', 'Projections', 'Learn']) {
+    for (const label of ['Plan', 'Overview', 'Projections', 'Cash Flow', 'Risk', 'Compare', 'Tracking', 'Learn']) {
       fireEvent.click(within(nav).getByText(label))
       expect(await screen.findAllByText(/./)).not.toHaveLength(0)
       expect(screen.queryByText(/Something went wrong/i)).toBeNull()

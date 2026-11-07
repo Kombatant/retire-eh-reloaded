@@ -75,6 +75,13 @@ export interface TaxYearData {
     employmentExemptionFull: number
     employmentExemptionHalf: number
   }
+  limits: {
+    tfsaAnnual: number
+    rrspRate: number
+    rrspMax: number
+    fhsaAnnual: number
+    fhsaLifetime: number
+  }
   payroll: {
     ympe: number
     yampe: number
@@ -225,6 +232,13 @@ export const TAX_2026: TaxYearData = {
     coupleSpouseNoOas: { maxAnnual: 1138.9 * 12, combinedCutoff: 55392 },
     employmentExemptionFull: 5000,
     employmentExemptionHalf: 10000,
+  },
+  limits: {
+    tfsaAnnual: 7000,
+    rrspRate: 0.18,
+    rrspMax: 33810,
+    fhsaAnnual: 8000,
+    fhsaLifetime: 40000,
   },
   payroll: {
     ympe: 74600,

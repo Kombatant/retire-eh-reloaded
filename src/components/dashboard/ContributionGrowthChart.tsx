@@ -9,7 +9,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts'
-import { buildContributionGrowth } from '@/lib/projectionSim'
+import { buildContributionGrowth } from '@/lib/contributionGrowth'
 import { formatCompactMoney, formatMoney } from '@/lib/formatting'
 import { PiggyBank } from 'lucide-react'
 
@@ -84,7 +84,7 @@ export function ContributionGrowthChart({
             />
             <Tooltip
               contentStyle={tooltipStyle}
-              formatter={(value: number | undefined, name?: string) => [`${formatMoney(value ?? 0)}`, name ?? ''] as const}
+              formatter={(value, name) => [`${formatMoney(Number(value ?? 0))}`, String(name ?? '')] as const}
               labelFormatter={(label) => `Age ${label}`}
               labelStyle={{ color: isDarkMode ? '#f3f4f6' : '#374151', fontWeight: 500 }}
             />

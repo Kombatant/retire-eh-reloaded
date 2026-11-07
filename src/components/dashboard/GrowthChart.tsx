@@ -30,6 +30,7 @@ export function GrowthChart({
     : activeScenario === 'optimistic'
       ? optimisticProjectionData
       : currentProjectionData
+  const hasOther = chartData.some(point => point.Other !== undefined)
 
   return (
     <div className="animate-fade-in-up-delay-3 card p-6">
@@ -77,12 +78,18 @@ export function GrowthChart({
       <div className="mb-4 flex gap-4 text-sm">
         <div className="flex items-center gap-2">
           <span className="w-3 h-3 rounded-full bg-indigo-500"></span>
-          <span className="text-gray-700 dark:text-gray-300">RRSP</span>
+          <span className="text-gray-700 dark:text-gray-300">RRSP &amp; registered</span>
         </div>
         <div className="flex items-center gap-2">
           <span className="w-3 h-3 rounded-full bg-emerald-500"></span>
           <span className="text-gray-700 dark:text-gray-300">TFSA</span>
         </div>
+        {hasOther && (
+          <div className="flex items-center gap-2">
+            <span className="w-3 h-3 rounded-full bg-sky-500"></span>
+            <span className="text-gray-700 dark:text-gray-300">Non-registered</span>
+          </div>
+        )}
         <div className="flex items-center gap-2">
           <span className="w-3 h-3 rounded-full bg-amber-500"></span>
           <span className="text-gray-700 dark:text-gray-300">Total</span>
@@ -106,7 +113,7 @@ export function GrowthChart({
             />
             <Tooltip
               contentStyle={{ backgroundColor: isDarkMode ? '#1f2937' : '#ffffff', border: `1px solid ${isDarkMode ? '#374151' : '#e5e7eb'}`, borderRadius: '8px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}
-              formatter={(value: number | undefined, name?: string) => [`${formatMoney(value ?? 0)}`, name ?? ''] as const}
+              formatter={(value, name) => [`${formatMoney(Number(value ?? 0))}`, String(name ?? '')] as const}
               labelFormatter={(label) => `Age ${label}`}
               labelStyle={{ color: isDarkMode ? '#f3f4f6' : '#374151', fontWeight: 500 }}
             />
@@ -130,6 +137,19 @@ export function GrowthChart({
               isAnimationActive={false}
               connectNulls={false}
             />
+            {hasOther && (
+              <Line
+                type="monotone"
+                dataKey="Other"
+                name="Non-registered"
+                stroke="#0ea5e9"
+                strokeWidth={2}
+                dot={true}
+                activeDot={{ r: 8 }}
+                isAnimationActive={false}
+                connectNulls={false}
+              />
+            )}
             <Line
               type="monotone"
               dataKey="Total"

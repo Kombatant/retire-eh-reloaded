@@ -1,15 +1,16 @@
 import { AssumptionsPanel } from './AssumptionsPanel'
-import { GiftsPanel } from './GiftsPanel'
+import { SpendingPanel } from './SpendingPanel'
+import { RealEstatePanel } from './RealEstatePanel'
+import { DrawdownPanel } from './DrawdownPanel'
+import { IncomePanel } from './IncomePanel'
 import { PersonSelector } from './PersonSelector'
 import { PersonForm } from './PersonForm'
 import { usePeople } from '@/contexts/PeopleContext'
 import { useAssumptions } from '@/contexts/AssumptionsContext'
-import { useProjectionContext } from '@/contexts/ProjectionContext'
 
 export function PlanTab() {
   const peopleApi = usePeople()
   const assumptions = useAssumptions()
-  const projection = useProjectionContext()
 
   if (peopleApi.people.length === 0) {
     return (
@@ -49,27 +50,22 @@ export function PlanTab() {
             onUpdatePersonAnnualIncome={peopleApi.updatePersonAnnualIncome}
             onUpdatePersonAnnualPension={peopleApi.updatePersonAnnualPension}
             onDeletePerson={peopleApi.deletePerson}
-            onAddAccount={peopleApi.addAccount}
-            onDeleteAccount={peopleApi.deleteAccount}
-            onUpdateAccountBalance={peopleApi.updateAccountBalance}
-            onUpdateAccountContribution={peopleApi.updateAccountContribution}
           />
       </div>
 
       <div className="space-y-4">
+        <IncomePanel />
         <AssumptionsPanel
           expectedReturn={assumptions.expectedReturn}
           setExpectedReturn={assumptions.setExpectedReturn}
           inflationRate={assumptions.inflationRate}
           setInflationRate={assumptions.setInflationRate}
-          replacementRate={assumptions.replacementRate}
-          setReplacementRate={assumptions.setReplacementRate}
-          withdrawalRate={assumptions.withdrawalRate}
-          setWithdrawalRate={assumptions.setWithdrawalRate}
           reinvestRrspRefund={assumptions.reinvestRrspRefund}
           setReinvestRrspRefund={assumptions.setReinvestRrspRefund}
         />
-        <GiftsPanel defaultAge={projection.householdRetirementAge} />
+        <SpendingPanel />
+        <RealEstatePanel />
+        <DrawdownPanel />
       </div>
     </div>
   )

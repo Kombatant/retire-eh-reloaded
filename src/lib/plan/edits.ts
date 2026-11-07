@@ -3,8 +3,12 @@ import type { PlannedGift } from '@/types/plan'
 import {
   GIFT_CATEGORY,
   type AccountV2,
+  type Debt,
   type ExpenseItem,
+  type ExpensePhase,
+  type Holding,
   type IncomeStream,
+  type Property,
   type PersonV2,
   type PlanV2,
 } from './schema'
@@ -117,6 +121,9 @@ export function addAccount(plan: PlanV2, ownerId: string, type: AccountV2['type'
     case 'FHSA':
       account = { ...base, type, lifetimeContributed: 0 }
       break
+    case 'STOCK':
+      account = { ...base, type, holdings: [], salePlan: { kind: 'none' } }
+      break
     default:
       account = { ...base, type } as AccountV2
   }
@@ -207,4 +214,218 @@ export function setInitialWithdrawalRate(plan: PlanV2, ratePct: number): PlanV2 
 
 export function patchAssumptions(plan: PlanV2, patch: Partial<PlanV2['assumptions']>): PlanV2 {
   return { ...plan, assumptions: { ...plan.assumptions, ...patch } }
+}
+
+// --- Generic account and income edits (v2 editors) -------------------------
+
+export function patchAccount(plan: PlanV2, accountId: string, patch: Partial<AccountV2>): PlanV2 {
+  return {
+    ...plan,
+    accounts: plan.accounts.map(a => (a.id === accountId ? ({ ...a, ...patch } as AccountV2) : a)),
+  }
+}
+
+export function setAccountContributionRule(
+  plan: PlanV2,
+  accountId: string,
+  patch: Partial<AccountV2['contributions'][number]>,
+): PlanV2 {
+  return {
+    ...plan,
+    accounts: plan.accounts.map(a => {
+      if (a.id !== accountId) return a
+      const [first, ...rest] = a.contributions
+      const base = first ?? { amount: 0, indexed: false, to: { kind: 'retirement' as const, personId: a.ownerId, offset: 0 } }
+      return { ...a, contributions: [{ ...base, ...patch }, ...rest] }
+    }),
+  }
+}
+
+export type IncomeTemplate = 'salary' | 'partTime' | 'dbPension' | 'rental' | 'windfall' | 'other'
+
+export function newIncome(template: IncomeTemplate, ownerId: string, id: string = newId('income')): IncomeStream {
+  const base = {
+    id, ownerId, amount: 0, frequency: 'annual' as const, growth: { kind: 'cpi' as const, pct: 0 },
+    taxTreatment: 'ordinary' as const,
+  }
+  const retirement = { kind: 'retirement' as const, personId: ownerId, offset: 0 }
+  switch (template) {
+    case 'salary':
+      return { ...base, kind: 'employment', label: 'Salary', amount: 60000, to: retirement }
+    case 'partTime':
+      return { ...base, kind: 'employment', label: 'Part-time work', amount: 25000, from: retirement, to: { ...retirement, offset: 5 } }
+    case 'dbPension':
+      return { ...base, kind: 'dbPension', label: 'Employer pension', amount: 20000, from: retirement, db: { indexationPctOfCpi: 100, survivorPct: 60 } }
+    case 'rental':
+      return { ...base, kind: 'rental', label: 'Rental income (net)', amount: 12000 }
+    case 'windfall':
+      return { ...base, kind: 'windfall', label: 'Inheritance', amount: 100000, frequency: 'oneTime', from: { kind: 'age', personId: ownerId, age: 60 }, taxTreatment: 'nonTaxable', growth: { kind: 'cpi', pct: 0 } }
+    case 'other':
+      return { ...base, kind: 'other', label: 'Other income', amount: 5000 }
+  }
+}
+
+export function addIncome(plan: PlanV2, income: IncomeStream): PlanV2 {
+  return { ...plan, incomes: [...plan.incomes, income] }
+}
+
+export function patchIncome(plan: PlanV2, incomeId: string, patch: Partial<IncomeStream>): PlanV2 {
+  return { ...plan, incomes: plan.incomes.map(i => (i.id === incomeId ? { ...i, ...patch } : i)) }
+}
+
+export function removeIncome(plan: PlanV2, incomeId: string): PlanV2 {
+  return { ...plan, incomes: plan.incomes.filter(i => i.id !== incomeId) }
+}
+
+// --- Spending, real estate and debt edits ------------------------------------
+
+export function patchExpenses(plan: PlanV2, patch: Partial<PlanV2['expenses']>): PlanV2 {
+  return { ...plan, expenses: { ...plan.expenses, ...patch } }
+}
+
+export function addExpenseItem(plan: PlanV2, item: ExpenseItem): PlanV2 {
+  return patchExpenses(plan, { items: [...plan.expenses.items, item] })
+}
+
+export function patchExpenseItem(plan: PlanV2, itemId: string, patch: Partial<ExpenseItem>): PlanV2 {
+  return patchExpenses(plan, { items: plan.expenses.items.map(i => (i.id === itemId ? { ...i, ...patch } : i)) })
+}
+
+export function addExpensePhase(plan: PlanV2, phase: ExpensePhase): PlanV2 {
+  return patchExpenses(plan, { phases: [...plan.expenses.phases, phase] })
+}
+
+export function patchExpensePhase(plan: PlanV2, phaseId: string, patch: Partial<ExpensePhase>): PlanV2 {
+  return patchExpenses(plan, { phases: plan.expenses.phases.map(p => (p.id === phaseId ? { ...p, ...patch } : p)) })
+}
+
+export function removeExpensePhase(plan: PlanV2, phaseId: string): PlanV2 {
+  return patchExpenses(plan, { phases: plan.expenses.phases.filter(p => p.id !== phaseId) })
+}
+
+// Switching to detailed mode seeds one living-expenses line from the simple
+// target so the projection does not jump.
+export function setExpenseMode(plan: PlanV2, mode: 'simple' | 'detailed', simpleTargetToday: number): PlanV2 {
+  if (mode === plan.expenses.mode) return plan
+  const hasRecurring = plan.expenses.items.some(i => i.frequency !== 'oneTime')
+  if (mode === 'detailed' && !hasRecurring && simpleTargetToday > 0) {
+    return patchExpenses(plan, {
+      mode,
+      items: [
+        { id: newId('expense'), label: 'Living expenses', category: 'living', amount: Math.round(simpleTargetToday * 0.8 / 1000) * 1000, frequency: 'annual', essential: true, realGrowthPct: 0 },
+        { id: newId('expense'), label: 'Travel & leisure', category: 'leisure', amount: Math.round(simpleTargetToday * 0.2 / 1000) * 1000, frequency: 'annual', essential: false, realGrowthPct: 0 },
+        ...plan.expenses.items,
+      ],
+    })
+  }
+  return patchExpenses(plan, { mode })
+}
+
+export function setSpendingStrategy(plan: PlanV2, strategy: PlanV2['drawdown']['strategy']): PlanV2 {
+  return { ...plan, drawdown: { ...plan.drawdown, strategy } }
+}
+
+export function addProperty(plan: PlanV2, property: Property): PlanV2 {
+  return { ...plan, properties: [...plan.properties, property] }
+}
+
+export function patchProperty(plan: PlanV2, propertyId: string, patch: Partial<Property>): PlanV2 {
+  return { ...plan, properties: plan.properties.map(p => (p.id === propertyId ? { ...p, ...patch } : p)) }
+}
+
+export function removeProperty(plan: PlanV2, propertyId: string): PlanV2 {
+  return {
+    ...plan,
+    properties: plan.properties.filter(p => p.id !== propertyId),
+    debts: plan.debts.map(d => (d.propertyId === propertyId ? { ...d, propertyId: undefined } : d)),
+  }
+}
+
+export function addDebt(plan: PlanV2, debt: Debt): PlanV2 {
+  return { ...plan, debts: [...plan.debts, debt] }
+}
+
+export function patchDebt(plan: PlanV2, debtId: string, patch: Partial<Debt>): PlanV2 {
+  return { ...plan, debts: plan.debts.map(d => (d.id === debtId ? { ...d, ...patch } : d)) }
+}
+
+export function removeDebt(plan: PlanV2, debtId: string): PlanV2 {
+  return { ...plan, debts: plan.debts.filter(d => d.id !== debtId) }
+}
+
+export function patchDrawdown(plan: PlanV2, patch: Partial<PlanV2['drawdown']>): PlanV2 {
+  return { ...plan, drawdown: { ...plan.drawdown, ...patch } }
+}
+
+export function patchEstate(plan: PlanV2, patch: Partial<PlanV2['estate']>): PlanV2 {
+  return { ...plan, estate: { ...plan.estate, ...patch } }
+}
+
+export function patchSimulation(plan: PlanV2, patch: Partial<PlanV2['assumptions']['simulation']>): PlanV2 {
+  return { ...plan, assumptions: { ...plan.assumptions, simulation: { ...plan.assumptions.simulation, ...patch } } }
+}
+
+// --- Stock portfolio edits ---------------------------------------------------
+// The account balance always equals the holdings' market value, so totals and
+// summaries that read `balance` stay correct.
+
+type StockAccount = Extract<AccountV2, { type: 'STOCK' }>
+
+function updateStockAccount(plan: PlanV2, accountId: string, update: (a: StockAccount) => StockAccount): PlanV2 {
+  return {
+    ...plan,
+    accounts: plan.accounts.map(a => {
+      if (a.id !== accountId || a.type !== 'STOCK') return a
+      const next = update(a)
+      return { ...next, balance: next.holdings.reduce((s, h) => s + h.shares * h.price, 0) }
+    }),
+  }
+}
+
+export function newHolding(id: string = newId('holding')): Holding {
+  return {
+    id, symbol: '', shares: 100, price: 50, dividendYieldPct: 0, dividendType: 'eligible',
+    growthPct: { bear: 0, base: 5, bull: 10 }, volatilityPct: 30, rsuGrants: [],
+  }
+}
+
+export function addHolding(plan: PlanV2, accountId: string, holding: Holding = newHolding()): PlanV2 {
+  return updateStockAccount(plan, accountId, a => ({ ...a, holdings: [...a.holdings, holding] }))
+}
+
+export function patchHolding(plan: PlanV2, accountId: string, holdingId: string, patch: Partial<Holding>): PlanV2 {
+  return updateStockAccount(plan, accountId, a => ({ ...a, holdings: a.holdings.map(h => (h.id === holdingId ? { ...h, ...patch } : h)) }))
+}
+
+export function removeHolding(plan: PlanV2, accountId: string, holdingId: string): PlanV2 {
+  return updateStockAccount(plan, accountId, a => ({ ...a, holdings: a.holdings.filter(h => h.id !== holdingId) }))
+}
+
+export function setStockSalePlan(plan: PlanV2, accountId: string, salePlan: StockAccount['salePlan']): PlanV2 {
+  return updateStockAccount(plan, accountId, a => ({ ...a, salePlan }))
+}
+
+export function setStockScenario(plan: PlanV2, stockScenario: PlanV2['assumptions']['stockScenario']): PlanV2 {
+  return { ...plan, assumptions: { ...plan.assumptions, stockScenario } }
+}
+
+// Apply fetched quotes (already in CAD) to every holding with that symbol.
+export function applyQuotes(
+  plan: PlanV2,
+  prices: Record<string, { price: number; currency: string; fxToCad: number; priceCad: number; asOf: string; source: string }>,
+  fetchedAt: string,
+): PlanV2 {
+  let next = plan
+  for (const account of plan.accounts) {
+    if (account.type !== 'STOCK') continue
+    for (const h of account.holdings) {
+      const quote = prices[h.symbol.trim().toUpperCase()]
+      if (!quote) continue
+      next = patchHolding(next, account.id, h.id, {
+        price: Math.round(quote.priceCad * 100) / 100,
+        lastQuote: { price: quote.price, currency: quote.currency, fxToCad: quote.fxToCad, asOf: quote.asOf, fetchedAt, source: quote.source },
+      })
+    }
+  }
+  return next
 }

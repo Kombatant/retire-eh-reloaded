@@ -39,3 +39,7 @@ logs/
 
 # TypeScript
 *.tsbuildinfo
+
+#Other
+AGENDS.md
+.gitignore

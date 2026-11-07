@@ -138,7 +138,7 @@ export function DrawdownChart({
             />
             <Tooltip
               contentStyle={tooltipStyle}
-              formatter={(value: number | undefined, name?: string) => [`${formatMoney(value ?? 0)}`, name ?? ''] as const}
+              formatter={(value, name) => [`${formatMoney(Number(value ?? 0))}`, String(name ?? '')] as const}
               labelFormatter={(label) => `Age ${label}`}
               labelStyle={{ color: isDarkMode ? '#f3f4f6' : '#374151', fontWeight: 500 }}
             />

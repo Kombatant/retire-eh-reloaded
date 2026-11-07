@@ -43,12 +43,17 @@ export function RetirementProjectionCard({
         )}
         {lastPoint?.RRSP !== undefined && (
           <div className="text-indigo-600 dark:text-indigo-400">
-            RRSP: ${formatMoney(lastPoint.RRSP ?? 0)}
+            RRSP &amp; registered: ${formatMoney(lastPoint.RRSP ?? 0)}
           </div>
         )}
         {lastPoint?.TFSA !== undefined && (
           <div className="text-emerald-600 dark:text-emerald-400">
             TFSA: ${formatMoney(lastPoint.TFSA ?? 0)}
+          </div>
+        )}
+        {lastPoint?.Other !== undefined && (
+          <div className="text-sky-600 dark:text-sky-400">
+            Non-registered: ${formatMoney(lastPoint.Other ?? 0)}
           </div>
         )}
       </div>

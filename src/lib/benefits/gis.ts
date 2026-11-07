@@ -27,6 +27,7 @@ function countable(p: GisPerson, data: TaxYearData): number {
 // previous year's income; we use the current year's, assuming stable income.
 export function gisAnnual(people: GisPerson[], data: TaxYearData = getTaxYear()): number[] {
   const g = data.gis
+  if (people.length === 0) return []
   if (people.length === 1 || people.length > 2) {
     return people.map(p => {
       if (!p.receivesOas) return 0

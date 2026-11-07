@@ -1,0 +1,427 @@
+{
+ "description": "Annual Canadian total returns derived from Statistics Canada tables. Nominal, as fractions.",
+ "years": "1957-2015",
+ "method": {
+  "equity": "S&P/TSX Composite close, December to December, plus the average monthly dividend yield (Table 10-10-0125-01).",
+  "bond": "Government of Canada bonds over 10 years: prior December yield plus price change from the yield change, duration 7, convexity 60 (Table 10-10-0122-01).",
+  "cash": "Average of monthly 3-month Treasury bill auction yields (Table 10-10-0122-01).",
+  "inflation": "Annual average CPI, all-items, Canada (Table 18-10-0005-01)."
+ },
+ "source": "Statistics Canada, Tables 10-10-0125-01, 10-10-0122-01 and 18-10-0005-01, downloaded November 2026.",
+ "license": "Statistics Canada Open Licence (https://www.statcan.gc.ca/en/reference/licence). Index levels are third-party data published by Statistics Canada; only derived annual returns are included.",
+ "data": [
+  {
+   "year": 1957,
+   "equity": -0.19847,
+   "bond": 0.05027,
+   "cash": 0.0376,
+   "inflation": 0.03497
+  },
+  {
+   "year": 1958,
+   "equity": 0.30422,
+   "bond": -0.01653,
+   "cash": 0.02254,
+   "inflation": 0.02703
+  },
+  {
+   "year": 1959,
+   "equity": 0.04344,
+   "bond": -0.00908,
+   "cash": 0.0481,
+   "inflation": 0.00658
+  },
+  {
+   "year": 1960,
+   "equity": 0.01669,
+   "bond": 0.06436,
+   "cash": 0.03202,
+   "inflation": 0.01307
+  },
+  {
+   "year": 1961,
+   "equity": 0.31629,
+   "bond": 0.08013,
+   "cash": 0.02812,
+   "inflation": 0.0129
+  },
+  {
+   "year": 1962,
+   "equity": -0.06962,
+   "bond": 0.03749,
+   "cash": 0.04053,
+   "inflation": 0.01274
+  },
+  {
+   "year": 1963,
+   "equity": 0.15099,
+   "bond": 0.04542,
+   "cash": 0.03562,
+   "inflation": 0.01258
+  },
+  {
+   "year": 1964,
+   "equity": 0.24577,
+   "bond": 0.06237,
+   "cash": 0.03749,
+   "inflation": 0.01863
+  },
+  {
+   "year": 1965,
+   "equity": 0.06383,
+   "bond": 0.02481,
+   "cash": 0.03984,
+   "inflation": 0.02439
+  },
+  {
+   "year": 1966,
+   "equity": -0.06786,
+   "bond": 0.02919,
+   "cash": 0.04995,
+   "inflation": 0.04167
+  },
+  {
+   "year": 1967,
+   "equity": 0.17433,
+   "bond": 0.00483,
+   "cash": 0.04641,
+   "inflation": 0.03429
+  },
+  {
+   "year": 1968,
+   "equity": 0.21657,
+   "bond": 0.01393,
+   "cash": 0.06267,
+   "inflation": 0.03867
+  },
+  {
+   "year": 1969,
+   "equity": -0.00875,
+   "bond": 0.00408,
+   "cash": 0.07193,
+   "inflation": 0.04787
+  },
+  {
+   "year": 1970,
+   "equity": -0.03404,
+   "bond": 0.18249,
+   "cash": 0.05991,
+   "inflation": 0.03046
+  },
+  {
+   "year": 1971,
+   "equity": 0.07861,
+   "bond": 0.10055,
+   "cash": 0.03562,
+   "inflation": 0.02956
+  },
+  {
+   "year": 1972,
+   "equity": 0.26601,
+   "bond": 0.02734,
+   "cash": 0.03561,
+   "inflation": 0.04785
+  },
+  {
+   "year": 1973,
+   "equity": -0.00374,
+   "bond": 0.03161,
+   "cash": 0.0547,
+   "inflation": 0.07763
+  },
+  {
+   "year": 1974,
+   "equity": -0.25415,
+   "bond": 0.00553,
+   "cash": 0.07824,
+   "inflation": 0.11017
+  },
+  {
+   "year": 1975,
+   "equity": 0.18892,
+   "bond": 0.03886,
+   "cash": 0.07395,
+   "inflation": 0.10687
+  },
+  {
+   "year": 1976,
+   "equity": 0.10561,
+   "bond": 0.16942,
+   "cash": 0.08868,
+   "inflation": 0.07241
+  },
+  {
+   "year": 1977,
+   "equity": 0.09573,
+   "bond": 0.06397,
+   "cash": 0.07332,
+   "inflation": 0.08039
+  },
+  {
+   "year": 1978,
+   "equity": 0.28038,
+   "bond": 0.02648,
+   "cash": 0.08676,
+   "inflation": 0.08929
+  },
+  {
+   "year": 1979,
+   "equity": 0.42662,
+   "bond": -0.00993,
+   "cash": 0.11688,
+   "inflation": 0.0929
+  },
+  {
+   "year": 1980,
+   "equity": 0.2889,
+   "bond": 0.02417,
+   "cash": 0.12793,
+   "inflation": 0.1
+  },
+  {
+   "year": 1981,
+   "equity": -0.09796,
+   "bond": -0.03502,
+   "cash": 0.1772,
+   "inflation": 0.125
+  },
+  {
+   "year": 1982,
+   "equity": 0.05364,
+   "bond": 0.44175,
+   "cash": 0.13658,
+   "inflation": 0.10909
+  },
+  {
+   "year": 1983,
+   "equity": 0.33737,
+   "bond": 0.09413,
+   "cash": 0.0931,
+   "inflation": 0.05829
+  },
+  {
+   "year": 1984,
+   "equity": -0.02283,
+   "bond": 0.14579,
+   "cash": 0.11059,
+   "inflation": 0.04303
+  },
+  {
+   "year": 1985,
+   "equity": 0.24163,
+   "bond": 0.23628,
+   "cash": 0.0943,
+   "inflation": 0.0396
+  },
+  {
+   "year": 1986,
+   "equity": 0.08731,
+   "bond": 0.16077,
+   "cash": 0.08971,
+   "inflation": 0.04127
+  },
+  {
+   "year": 1987,
+   "equity": 0.05705,
+   "bond": 0.0183,
+   "cash": 0.08146,
+   "inflation": 0.04421
+  },
+  {
+   "year": 1988,
+   "equity": 0.10481,
+   "bond": 0.102,
+   "cash": 0.09482,
+   "inflation": 0.03942
+  },
+  {
+   "year": 1989,
+   "equity": 0.20371,
+   "bond": 0.15185,
+   "cash": 0.12054,
+   "inflation": 0.05056
+  },
+  {
+   "year": 1990,
+   "equity": -0.14253,
+   "bond": 0.04152,
+   "cash": 0.12808,
+   "inflation": 0.04813
+  },
+  {
+   "year": 1991,
+   "equity": 0.11244,
+   "bond": 0.22001,
+   "cash": 0.08727,
+   "inflation": 0.05612
+  },
+  {
+   "year": 1992,
+   "equity": -0.01472,
+   "bond": 0.12035,
+   "cash": 0.06585,
+   "inflation": 0.01449
+  },
+  {
+   "year": 1993,
+   "equity": 0.31533,
+   "bond": 0.19085,
+   "cash": 0.04844,
+   "inflation": 0.01905
+  },
+  {
+   "year": 1994,
+   "equity": -0.00208,
+   "bond": -0.05912,
+   "cash": 0.0554,
+   "inflation": 0.00117
+  },
+  {
+   "year": 1995,
+   "equity": 0.14207,
+   "bond": 0.22168,
+   "cash": 0.06892,
+   "inflation": 0.02217
+  },
+  {
+   "year": 1996,
+   "equity": 0.27793,
+   "bond": 0.12181,
+   "cash": 0.04208,
+   "inflation": 0.01484
+  },
+  {
+   "year": 1997,
+   "equity": 0.14702,
+   "bond": 0.13842,
+   "cash": 0.03258,
+   "inflation": 0.01687
+  },
+  {
+   "year": 1998,
+   "equity": -0.01574,
+   "bond": 0.10996,
+   "cash": 0.04731,
+   "inflation": 0.00996
+  },
+  {
+   "year": 1999,
+   "equity": 0.31251,
+   "bond": -0.02699,
+   "cash": 0.0472,
+   "inflation": 0.01752
+  },
+  {
+   "year": 2000,
+   "equity": 0.0733,
+   "bond": 0.11001,
+   "cash": 0.0549,
+   "inflation": 0.02691
+  },
+  {
+   "year": 2001,
+   "equity": -0.12377,
+   "bond": 0.04478,
+   "cash": 0.03768,
+   "inflation": 0.02516
+  },
+  {
+   "year": 2002,
+   "equity": -0.12195,
+   "bond": 0.08453,
+   "cash": 0.02586,
+   "inflation": 0.02249
+  },
+  {
+   "year": 2003,
+   "equity": 0.26135,
+   "bond": 0.06996,
+   "cash": 0.0287,
+   "inflation": 0.028
+  },
+  {
+   "year": 2004,
+   "equity": 0.14186,
+   "bond": 0.07124,
+   "cash": 0.0222,
+   "inflation": 0.01848
+  },
+  {
+   "year": 2005,
+   "equity": 0.2361,
+   "bond": 0.10802,
+   "cash": 0.02726,
+   "inflation": 0.02197
+  },
+  {
+   "year": 2006,
+   "equity": 0.16853,
+   "bond": 0.03551,
+   "cash": 0.04033,
+   "inflation": 0.01963
+  },
+  {
+   "year": 2007,
+   "equity": 0.09588,
+   "bond": 0.03621,
+   "cash": 0.04151,
+   "inflation": 0.022
+  },
+  {
+   "year": 2008,
+   "equity": -0.31938,
+   "bond": 0.0945,
+   "cash": 0.02387,
+   "inflation": 0.02332
+  },
+  {
+   "year": 2009,
+   "equity": 0.33898,
+   "bond": -0.00841,
+   "cash": 0.0035,
+   "inflation": 0.00263
+  },
+  {
+   "year": 2010,
+   "equity": 0.17137,
+   "bond": 0.08167,
+   "cash": 0.00597,
+   "inflation": 0.01836
+  },
+  {
+   "year": 2011,
+   "equity": -0.08504,
+   "bond": 0.11496,
+   "cash": 0.0092,
+   "inflation": 0.02918
+  },
+  {
+   "year": 2012,
+   "equity": 0.0699,
+   "bond": 0.03477,
+   "cash": 0.00972,
+   "inflation": 0.01501
+  },
+  {
+   "year": 2013,
+   "equity": 0.12682,
+   "bond": -0.03268,
+   "cash": 0.00969,
+   "inflation": 0.00904
+  },
+  {
+   "year": 2014,
+   "equity": 0.10285,
+   "bond": 0.09407,
+   "cash": 0.00909,
+   "inflation": 0.01954
+  },
+  {
+   "year": 2015,
+   "equity": -0.08052,
+   "bond": 0.0349,
+   "cash": 0.00502,
+   "inflation": 0.01118
+  }
+ ]
+}

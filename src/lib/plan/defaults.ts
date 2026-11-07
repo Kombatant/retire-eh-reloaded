@@ -1,4 +1,4 @@
-import { planSchema, MAX_CPP_ANNUAL_2026, type PersonV2, type PlanV2, type ProvinceCode } from './schema'
+import { planSchema, type PersonV2, type PlanV2, type ProvinceCode } from './schema'
 import { newId } from './ids'
 
 // Province for brand-new plans. Migrated plans keep Quebec (see migrate.ts).
@@ -22,7 +22,10 @@ export function createDefaultPerson(params: {
     province: params.province ?? DEFAULT_PROVINCE,
     retirementAge: 65,
     lifeExpectancy: 95,
-    cpp: { mode: 'amount', amountAt65: MAX_CPP_ANNUAL_2026 },
+    // New people get a CPP estimate from a typical work history (starting at
+    // 22, earning their current salary), which they can refine or replace
+    // with their statement amount.
+    cpp: { mode: 'history', startedWorkingYear: params.now.getFullYear() - params.currentAge + 22, yearsNotWorking: 0, childRearingYears: 0 },
     cppStartAge: 65,
     oas: { startAge: 65, yearsInCanadaAfter18: 40 },
   }

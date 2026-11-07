@@ -1,5 +1,6 @@
 import type { ProjectionDataPoint } from '@/types/projection'
 import type { CompiledPlan, SimResult } from './types'
+import { accountGroup, type AccountGroup } from '@/lib/plan/accountGroups'
 
 // Shapes simulation output into the series the existing charts and tables use.
 // The household age axis is the youngest person's age, as in the original app.
@@ -24,13 +25,15 @@ export function householdBaseAge(c: CompiledPlan): number {
   return c.startYear - Math.max(...c.people.map(p => p.birthYear))
 }
 
-function sumWhere(c: CompiledPlan, balances: number[], type: 'RRSP' | 'TFSA'): number {
-  return c.accounts.reduce((s, a, i) => s + (a.type === type ? balances[i] : 0), 0)
+// Chart series: RRSP = all tax-deferred registered accounts, TFSA, and
+// Other = non-registered and cash.
+function sumWhere(c: CompiledPlan, balances: number[], group: AccountGroup): number {
+  return c.accounts.reduce((s, a, i) => s + (accountGroup(a.type) === group ? balances[i] : 0), 0)
 }
 
 // v1 charts hid a series when no account of that type had money or contributions.
-function hasSeries(c: CompiledPlan, type: 'RRSP' | 'TFSA'): boolean {
-  return c.accounts.some((a, i) => a.type === type && (
+function hasSeries(c: CompiledPlan, group: AccountGroup): boolean {
+  return c.accounts.some((a, i) => accountGroup(a.type) === group && (
     a.initialBalance > 0 || a.contributions.some(f => f.amount > 0) || c.refundTargets.includes(i)
   ))
 }
@@ -38,16 +41,19 @@ function hasSeries(c: CompiledPlan, type: 'RRSP' | 'TFSA'): boolean {
 // Start-of-year balances from today through the first drawdown year.
 export function toProjectionData(c: CompiledPlan, result: SimResult, showRealValues: boolean): ProjectionDataPoint[] {
   const baseAge = householdBaseAge(c)
-  const showRrsp = hasSeries(c, 'RRSP')
-  const showTfsa = hasSeries(c, 'TFSA')
+  const showRrsp = hasSeries(c, 'registered')
+  const showTfsa = hasSeries(c, 'tfsa')
+  const showOther = hasSeries(c, 'taxable') ||
+    result.rows.slice(0, c.drawdownStartOffset + 1).some(r => sumWhere(c, r.balancesStart, 'taxable') > 0)
   return result.rows.slice(0, c.drawdownStartOffset + 1).map(row => {
     const scale = showRealValues ? 1 / row.cpi : 1
     const total = row.balancesStart.reduce((s, b) => s + b, 0)
     return {
       year: row.year,
       age: baseAge + row.offset,
-      RRSP: showRrsp ? sumWhere(c, row.balancesStart, 'RRSP') * scale : undefined,
-      TFSA: showTfsa ? sumWhere(c, row.balancesStart, 'TFSA') * scale : undefined,
+      RRSP: showRrsp ? sumWhere(c, row.balancesStart, 'registered') * scale : undefined,
+      TFSA: showTfsa ? sumWhere(c, row.balancesStart, 'tfsa') * scale : undefined,
+      ...(showOther ? { Other: sumWhere(c, row.balancesStart, 'taxable') * scale } : {}),
       Total: total * scale,
     }
   })

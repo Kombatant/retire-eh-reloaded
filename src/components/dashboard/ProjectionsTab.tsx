@@ -4,14 +4,13 @@ import { useAssumptions } from '@/contexts/AssumptionsContext'
 import { useDarkMode } from '@/hooks/useDarkMode'
 import { getPortfolioAtRetirement } from '@/lib/calculations'
 import { BenefitTimingCard } from './BenefitTimingCard'
+import { StockScenariosCard } from './StockScenariosCard'
 import { BarChart3 } from 'lucide-react'
 
 const GrowthChart = lazy(() => import('./GrowthChart').then(m => ({ default: m.GrowthChart })))
-const MonteCarloChart = lazy(() => import('./MonteCarloChart').then(m => ({ default: m.MonteCarloChart })))
 const ContributionGrowthChart = lazy(() => import('./ContributionGrowthChart').then(m => ({ default: m.ContributionGrowthChart })))
 const DrawdownChart = lazy(() => import('./DrawdownChart').then(m => ({ default: m.DrawdownChart })))
 const RetirementCashFlowTable = lazy(() => import('./RetirementCashFlowTable').then(m => ({ default: m.RetirementCashFlowTable })))
-const RetirementMonteCarloChart = lazy(() => import('./RetirementMonteCarloChart').then(m => ({ default: m.RetirementMonteCarloChart })))
 
 function ChartFallback() {
   return (
@@ -25,11 +24,10 @@ export function ProjectionsTab() {
   const [isDarkMode] = useDarkMode()
   const projection = useProjectionContext()
   const assumptions = useAssumptions()
-  const [accumulationView, setAccumulationView] = useState<'growth' | 'contributions' | 'volatility'>('growth')
-  const [decumulationView, setDecumulationView] = useState<'rates' | 'cashflow' | 'volatility'>('rates')
+  const [accumulationView, setAccumulationView] = useState<'growth' | 'contributions'>('growth')
+  const [decumulationView, setDecumulationView] = useState<'rates' | 'cashflow'>('rates')
 
   const projectionData = projection.currentProjectionData
-  const startAge = projectionData.length > 0 ? projectionData[0].age : 0
   const retirementAge = projectionData.length > 0 ? projectionData[projectionData.length - 1].age : 0
   const startBalance = getPortfolioAtRetirement(projectionData)
 
@@ -64,16 +62,6 @@ export function ProjectionsTab() {
             >
               Contribution vs. Growth
             </button>
-            <button
-              onClick={() => setAccumulationView('volatility')}
-              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${
-                accumulationView === 'volatility'
-                  ? 'bg-white dark:bg-gray-700 text-gray-800 dark:text-white shadow-sm'
-                  : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-250'
-              }`}
-            >
-              Market Volatility (Monte Carlo)
-            </button>
           </div>
         </div>
 
@@ -95,18 +83,6 @@ export function ProjectionsTab() {
               annualContribution={projection.totalAnnualContributions}
               showRealValues={assumptions.showRealValues}
               inflationRate={assumptions.inflationRate}
-            />
-          )}
-          {accumulationView === 'volatility' && (
-            <MonteCarloChart
-              isDarkMode={isDarkMode}
-              initialBalance={projectionData.length > 0 ? projectionData[0].Total : 0}
-              annualContribution={projection.totalAnnualContributions}
-              yearsToRetirement={projection.yearsToRetirement}
-              expectedReturn={assumptions.expectedReturn}
-              inflationRate={assumptions.inflationRate}
-              startAge={startAge}
-              showRealValues={assumptions.showRealValues}
             />
           )}
         </Suspense>
@@ -141,16 +117,6 @@ export function ProjectionsTab() {
             >
               Cash Flow Table
             </button>
-            <button
-              onClick={() => setDecumulationView('volatility')}
-              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${
-                decumulationView === 'volatility'
-                  ? 'bg-white dark:bg-gray-700 text-gray-800 dark:text-white shadow-sm'
-                  : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-250'
-              }`}
-            >
-              Market Volatility (Monte Carlo)
-            </button>
           </div>
         </div>
 
@@ -169,19 +135,10 @@ export function ProjectionsTab() {
             />
           )}
           {decumulationView === 'cashflow' && <RetirementCashFlowTable />}
-          {decumulationView === 'volatility' && (
-            <RetirementMonteCarloChart
-              isDarkMode={isDarkMode}
-              startBalance={startBalance}
-              expectedReturn={assumptions.expectedReturn}
-              inflationRate={assumptions.inflationRate}
-              withdrawalRate={assumptions.withdrawalRate}
-              startAge={retirementAge}
-              showRealValues={assumptions.showRealValues}
-            />
-          )}
         </Suspense>
       </div>
+
+      <StockScenariosCard />
 
       {/* 3. Government Benefit Timing */}
       <div className="pt-4 border-t border-gray-200/50 dark:border-gray-700/50">
@@ -205,7 +162,7 @@ export function ProjectionsTab() {
             <strong className="text-gray-800 dark:text-gray-200">Contributions:</strong> Regular contributions accelerate growth through dollar-cost averaging.
           </p>
           <p>
-            <strong className="text-gray-800 dark:text-gray-200">Monte Carlo:</strong> Uses ~13% annual market volatility to show a range of plausible outcomes, not a single guaranteed path.
+            <strong className="text-gray-800 dark:text-gray-200">Uncertainty:</strong> These charts use steady average returns. The Risk tab runs the full plan through thousands of randomized markets and every historical Canadian start year.
           </p>
         </div>
       </div>

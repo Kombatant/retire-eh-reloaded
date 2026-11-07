@@ -1,13 +1,13 @@
 export { compilePlan } from './compile'
 export { simulate, cumulativeCpi, flowSeries } from './simulate'
-export { deterministicPath } from './paths'
+export { deterministicPath } from './paths/deterministic'
 export { toProjectionData, toCashFlowRows, householdBaseAge, type CashFlowRow } from './legacyAdapter'
 export type * from './types'
 
 import type { PlanV2 } from '@/lib/plan/schema'
 import { compilePlan } from './compile'
 import { simulate } from './simulate'
-import { deterministicPath } from './paths'
+import { deterministicPath } from './paths/deterministic'
 import type { SimResult, CompiledPlan } from './types'
 
 // Convenience: compile + simulate at the plan's own expected return/inflation.

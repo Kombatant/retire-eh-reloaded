@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useReducer,
 import type { Person } from '@/types/person'
 import type { PlanAssumptions } from '@/types/plan'
 import type { PlanV2, UiPrefs } from '@/lib/plan/schema'
-import { loadStore, serializeStore, STORE_KEY, type StoreState } from '@/lib/plan/storage'
+import { loadStore, serializeStore, STORE_KEY, type Baseline, type Snapshot, type StoreState } from '@/lib/plan/storage'
 import { toLegacyAssumptions, toLegacyPeople } from '@/lib/plan/legacy-view'
 import { newId } from '@/lib/plan/ids'
 
@@ -14,6 +14,9 @@ type StoreAction =
   | { type: 'DELETE_PLAN'; id: string }
   | { type: 'RENAME_PLAN'; id: string; name: string }
   | { type: 'SET_UI_PREFS'; patch: Partial<UiPrefs> }
+  | { type: 'ADD_SNAPSHOT'; snapshot: Snapshot }
+  | { type: 'DELETE_SNAPSHOT'; id: string }
+  | { type: 'SET_BASELINE'; baseline: Baseline }
 
 function storeReducer(state: StoreState, action: StoreAction): StoreState {
   switch (action.type) {
@@ -37,12 +40,24 @@ function storeReducer(state: StoreState, action: StoreAction): StoreState {
       if (state.plans.length <= 1) return state
       const plans = state.plans.filter(p => p.id !== action.id)
       const activePlanId = state.activePlanId === action.id ? plans[0].id : state.activePlanId
-      return { ...state, plans, activePlanId }
+      return {
+        ...state,
+        plans,
+        activePlanId,
+        snapshots: state.snapshots.filter(s => s.planId !== action.id),
+        baselines: state.baselines.filter(b => b.planId !== action.id),
+      }
     }
     case 'RENAME_PLAN':
       return { ...state, plans: state.plans.map(p => (p.id === action.id ? { ...p, name: action.name } : p)) }
     case 'SET_UI_PREFS':
       return { ...state, uiPrefs: { ...state.uiPrefs, ...action.patch } }
+    case 'ADD_SNAPSHOT':
+      return { ...state, snapshots: [...state.snapshots, action.snapshot].sort((a, b) => a.date.localeCompare(b.date)) }
+    case 'DELETE_SNAPSHOT':
+      return { ...state, snapshots: state.snapshots.filter(s => s.id !== action.id) }
+    case 'SET_BASELINE':
+      return { ...state, baselines: [...state.baselines.filter(b => b.planId !== action.baseline.planId), action.baseline] }
   }
 }
 
@@ -67,6 +82,11 @@ interface PlanStoreValue {
   setUiPrefs: (patch: Partial<UiPrefs>) => void
   selectedPersonId: string | null
   setSelectedPersonId: (id: string | null) => void
+  snapshots: Snapshot[]
+  baselines: Baseline[]
+  addSnapshot: (snapshot: Snapshot) => void
+  deleteSnapshot: (id: string) => void
+  setBaseline: (baseline: Baseline) => void
 }
 
 const PlanStoreContext = createContext<PlanStoreValue | null>(null)
@@ -119,6 +139,9 @@ export function PlanStoreProvider({ children, now: nowProp }: { children: ReactN
     dispatch({ type: 'ADD_PLAN', plan: { ...structuredClone(source), id: newId('plan'), name: `${source.name} (copy)` } })
   }, [state.plans])
   const clearStorageError = useCallback(() => setStorageError(null), [])
+  const addSnapshot = useCallback((snapshot: Snapshot) => dispatch({ type: 'ADD_SNAPSHOT', snapshot }), [])
+  const deleteSnapshot = useCallback((id: string) => dispatch({ type: 'DELETE_SNAPSHOT', id }), [])
+  const setBaseline = useCallback((baseline: Baseline) => dispatch({ type: 'SET_BASELINE', baseline }), [])
 
   const value: PlanStoreValue = {
     plans: state.plans,
@@ -140,6 +163,11 @@ export function PlanStoreProvider({ children, now: nowProp }: { children: ReactN
     setUiPrefs,
     selectedPersonId: effectiveSelectedId,
     setSelectedPersonId,
+    snapshots: state.snapshots,
+    baselines: state.baselines,
+    addSnapshot,
+    deleteSnapshot,
+    setBaseline,
   }
 
   return <PlanStoreContext.Provider value={value}>{children}</PlanStoreContext.Provider>

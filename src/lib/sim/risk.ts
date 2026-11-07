@@ -1,0 +1,159 @@
+import type { PlanV2 } from '@/lib/plan/schema'
+import { compilePlan } from './compile'
+import { simulate } from './simulate'
+import { mulberry32 } from './rng'
+import { monteCarloPath, type MonteCarloSettings } from './paths/monteCarlo'
+import { CRASH_SCENARIOS, HISTORICAL_DATA, historicalPath, overlayPath, type Mix } from './paths/historical'
+import { deterministicPath } from './paths/deterministic'
+import type { CompiledPlan, SimResult } from './types'
+
+// A run fails when a year's planned spending or withdrawal cannot be funded
+// (beyond a small tolerance for rounding).
+export function runSucceeded(result: SimResult): boolean {
+  return result.rows.every(r => r.shortfall <= Math.max(100 * r.cpi, 0.01 * (r.withdrawal + r.shortfall)))
+}
+
+// End-of-year portfolio in plan-start dollars.
+function realPortfolio(result: SimResult): Float64Array {
+  return Float64Array.from(result.rows, r => r.balancesEnd.reduce((s, b) => s + b, 0) / r.cpiEnd)
+}
+
+export interface Band { p10: number; p25: number; p50: number; p75: number; p90: number }
+
+export interface MonteCarloSummary {
+  runs: number
+  successes: number
+  successRate: number
+  years: number[]
+  bands: Band[]
+  medianEstate: number // real
+  p10Estate: number // real
+}
+
+function quantile(sorted: Float64Array | number[], q: number): number {
+  if (sorted.length === 0) return 0
+  const pos = (sorted.length - 1) * q
+  const lo = Math.floor(pos)
+  const hi = Math.ceil(pos)
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo)
+}
+
+export function summarizeRuns(c: CompiledPlan, portfolios: Float64Array[], successes: number, estates: number[]): MonteCarloSummary {
+  const runs = portfolios.length
+  const column = new Float64Array(runs)
+  const bands: Band[] = []
+  for (let t = 0; t < c.years; t++) {
+    for (let i = 0; i < runs; i++) column[i] = portfolios[i][t]
+    const sorted = column.slice().sort()
+    bands.push({ p10: quantile(sorted, 0.1), p25: quantile(sorted, 0.25), p50: quantile(sorted, 0.5), p75: quantile(sorted, 0.75), p90: quantile(sorted, 0.9) })
+  }
+  const sortedEstates = estates.slice().sort((a, b) => a - b)
+  return {
+    runs,
+    successes,
+    successRate: runs > 0 ? successes / runs : 0,
+    years: Array.from({ length: c.years }, (_, t) => c.startYear + t),
+    bands,
+    medianEstate: quantile(sortedEstates, 0.5),
+    p10Estate: quantile(sortedEstates, 0.1),
+  }
+}
+
+export interface MonteCarloAccumulator {
+  portfolios: Float64Array[]
+  estates: number[]
+  successes: number
+}
+
+// Run a batch of Monte Carlo trials. Seeds are derived per run, so results
+// do not depend on batch size (the worker streams batches).
+export function runMonteCarloBatch(
+  c: CompiledPlan,
+  settings: MonteCarloSettings,
+  seed: number,
+  fromRun: number,
+  count: number,
+  acc: MonteCarloAccumulator = { portfolios: [], estates: [], successes: 0 },
+): MonteCarloAccumulator {
+  for (let i = fromRun; i < fromRun + count; i++) {
+    const rng = mulberry32((seed * 2654435761 + i * 40503) >>> 0)
+    const result = simulate(c, monteCarloPath(c, settings, rng))
+    acc.portfolios.push(realPortfolio(result))
+    if (runSucceeded(result)) acc.successes++
+    const estate = result.estate
+    acc.estates.push(estate ? estate.afterTaxEstate / estate.cpi : 0)
+  }
+  return acc
+}
+
+export function settingsFromPlan(plan: PlanV2): MonteCarloSettings & { runs: number; seed: number; historicalMix: Mix } {
+  return plan.assumptions.simulation
+}
+
+export function runMonteCarlo(plan: PlanV2, startYear: number, runs?: number): MonteCarloSummary {
+  const c = compilePlan(plan, { startYear })
+  const s = settingsFromPlan(plan)
+  const acc = runMonteCarloBatch(c, s, s.seed, 0, runs ?? s.runs)
+  return summarizeRuns(c, acc.portfolios, acc.successes, acc.estates)
+}
+
+export interface BacktestWindow {
+  startYear: number
+  success: boolean
+  endingReal: number
+  minReal: number
+  // First calendar year of the plan in which spending could not be funded.
+  failureYear: number | null
+}
+
+export interface BacktestSummary {
+  windows: BacktestWindow[]
+  successRate: number
+}
+
+export function runBacktest(plan: PlanV2, startYear: number): BacktestSummary {
+  const c = compilePlan(plan, { startYear })
+  const mix = plan.assumptions.simulation.historicalMix
+  const windows = HISTORICAL_DATA.map((h, i) => {
+    const result = simulate(c, historicalPath(c, i, mix))
+    const portfolio = realPortfolio(result)
+    const failed = result.rows.find(r => r.shortfall > Math.max(100 * r.cpi, 0.01 * (r.withdrawal + r.shortfall)))
+    return {
+      startYear: h.year,
+      success: !failed,
+      endingReal: portfolio[portfolio.length - 1] ?? 0,
+      minReal: portfolio.slice(c.drawdownStartOffset).reduce((m, v) => Math.min(m, v), Infinity),
+      failureYear: failed ? failed.year : null,
+    }
+  })
+  return { windows, successRate: windows.filter(w => w.success).length / Math.max(1, windows.length) }
+}
+
+export interface CrashResult {
+  id: string
+  label: string
+  description: string
+  success: boolean
+  endingReal: number
+  minReal: number
+  baselineEndingReal: number
+}
+
+export function runCrashScenarios(plan: PlanV2, startYear: number): CrashResult[] {
+  const c = compilePlan(plan, { startYear })
+  const mix = plan.assumptions.simulation.historicalMix
+  const baseline = realPortfolio(simulate(c, deterministicPath(c.years, c.expectedReturnPct, c.inflationPct)))
+  return CRASH_SCENARIOS.map(s => {
+    const result = simulate(c, overlayPath(c, c.drawdownStartOffset, s.fromYear, s.length, mix))
+    const portfolio = realPortfolio(result)
+    return {
+      id: s.id,
+      label: s.label,
+      description: s.description,
+      success: runSucceeded(result),
+      endingReal: portfolio[portfolio.length - 1] ?? 0,
+      minReal: portfolio.slice(c.drawdownStartOffset).reduce((m, v) => Math.min(m, v), Infinity),
+      baselineEndingReal: baseline[baseline.length - 1] ?? 0,
+    }
+  })
+}

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { TrendingUp, Coins, Landmark, Flag, Settings, BookOpen, AlertTriangle, Briefcase, Percent, type LucideIcon } from 'lucide-react'
+import { TrendingUp, Coins, Landmark, Flag, Settings, BookOpen, AlertTriangle, Briefcase, Percent, Dice5, ArrowDownToLine, ScrollText, type LucideIcon } from 'lucide-react'
 
 interface LearnSection {
   title: string
@@ -196,6 +196,59 @@ const sections: LearnSection[] = [
         </div>
         <p className="text-xs text-gray-500">
           * Federal employees also receive a temporary "bridge benefit" from retirement to 65 roughly equal to CPP. Since this app counts CPP separately, don't add the bridge amount.
+        </p>
+      </div>
+    )
+  },
+  {
+    title: 'Withdrawal Strategies, RRIFs and Meltdowns',
+    icon: ArrowDownToLine,
+    color: 'text-primary',
+    content: (
+      <div className="space-y-3 text-sm text-gray-600 dark:text-gray-400">
+        <p>
+          <strong className="text-gray-800 dark:text-gray-200">Fixed rate</strong> withdraws a % of the portfolio in the first retirement year and then the same inflation-adjusted amount.
+          <strong className="text-gray-800 dark:text-gray-200"> Fund my spending</strong> withdraws exactly what your budget needs after other income and tax.
+          <strong className="text-gray-800 dark:text-gray-200"> % of portfolio</strong>, <strong className="text-gray-800 dark:text-gray-200">guardrails (Guyton-Klinger)</strong> and <strong className="text-gray-800 dark:text-gray-200">VPW</strong> let spending rise and fall with markets; in a detailed budget they never cut below essential items.
+        </p>
+        <p>
+          An RRSP must become a RRIF by the end of the year you turn 71, and a RRIF has a <strong className="text-gray-800 dark:text-gray-200">minimum withdrawal</strong> every year (about 5.3% at 72, rising to 20% at 95). Minimums you do not need are reinvested after tax. LIRAs unlock as LIFs (from 55) with both a minimum and a maximum.
+        </p>
+        <p>
+          An <strong className="text-gray-800 dark:text-gray-200">RRSP meltdown</strong> withdraws extra RRSP money in low-income years to fill a target tax bracket, then reinvests it (TFSA first). It can lower lifetime tax, reduce the OAS clawback later, and shrink the RRIF that is fully taxed at death.
+        </p>
+      </div>
+    )
+  },
+  {
+    title: 'Risk: Monte Carlo and Historical Backtests',
+    icon: Dice5,
+    color: 'text-primary',
+    content: (
+      <div className="space-y-3 text-sm text-gray-600 dark:text-gray-400">
+        <p>
+          The <strong className="text-gray-800 dark:text-gray-200">Monte Carlo</strong> simulation re-runs your whole plan (taxes, benefits, withdrawals) hundreds of times with random yearly returns for Canadian equities, bonds and cash, and optionally random inflation that persists from year to year. The chance of success is the share of runs where every year is funded.
+        </p>
+        <p>
+          The <strong className="text-gray-800 dark:text-gray-200">historical backtest</strong> replays actual Canadian returns and inflation (1957–2015, derived from Statistics Canada tables) starting in each year. Plans longer than the data wrap around. Stress tests replay the 2008 crisis, the 2000–2002 tech crash and 1970s stagflation at the start of retirement.
+        </p>
+        <p>
+          A high success rate is reassuring but not a guarantee; most plans can be adjusted along the way. Many planners aim for 80–90% and revisit the plan every year.
+        </p>
+      </div>
+    )
+  },
+  {
+    title: 'Survivors and Your Estate',
+    icon: ScrollText,
+    color: 'text-primary',
+    content: (
+      <div className="space-y-3 text-sm text-gray-600 dark:text-gray-400">
+        <p>
+          When a spouse dies, registered accounts and TFSAs can roll over to the survivor tax-free. The survivor keeps their own benefits, a share of a DB pension (the survivor %), and a CPP survivor's pension (60% of the deceased's pension at 65+, within the CPP maximum). From then on the survivor files a single return, without pension splitting.
+        </p>
+        <p>
+          At the last death, RRSPs and RRIFs are added to income on the final return and other investments are treated as sold, so capital gains are taxed (a principal residence is exempt). Provincial probate fees may also apply. The estate card shows what is left for heirs.
         </p>
       </div>
     )

@@ -1,4 +1,4 @@
-import { FileText, Target, TrendingUp, BookOpen } from 'lucide-react'
+import { FileText, Target, TrendingUp, BookOpen, Dice5, Waves, Columns3, LineChart } from 'lucide-react'
 
 interface TabsProps {
   activeTab: string
@@ -9,6 +9,10 @@ const tabs = [
   { id: 'plan', label: 'Plan', icon: FileText, color: 'text-primary' },
   { id: 'overview', label: 'Overview', icon: Target, color: 'text-secondary' },
   { id: 'projections', label: 'Projections', icon: TrendingUp, color: 'text-indigo-500' },
+  { id: 'cashflow', label: 'Cash Flow', icon: Waves, color: 'text-indigo-500' },
+  { id: 'risk', label: 'Risk', icon: Dice5, color: 'text-indigo-500' },
+  { id: 'compare', label: 'Compare', icon: Columns3, color: 'text-indigo-500' },
+  { id: 'tracking', label: 'Tracking', icon: LineChart, color: 'text-indigo-500' },
   { id: 'learn', label: 'Learn', icon: BookOpen, color: 'text-violet-500' },
 ]
 

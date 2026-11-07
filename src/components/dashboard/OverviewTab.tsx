@@ -5,18 +5,21 @@ import { RetirementProjectionCard } from './RetirementProjectionCard'
 import { GoalsCard } from './GoalsCard'
 import { IncomeBreakdownCard } from './IncomeBreakdownCard'
 import { RetirementTaxTable } from './RetirementTaxTable'
-import { usePeople } from '@/contexts/PeopleContext'
+import { EstateCard } from './EstateCard'
+import { MilestonesCard } from './MilestonesCard'
+import { usePlanStore } from '@/contexts/PlanStoreContext'
+import { groupBalances } from '@/lib/plan/accountGroups'
 import { useAssumptions } from '@/contexts/AssumptionsContext'
 import { useProjectionContext } from '@/contexts/ProjectionContext'
 import { getPortfolioAtRetirement } from '@/lib/calculations'
 import { ClipboardList } from 'lucide-react'
 
 export function OverviewTab() {
-  const { people } = usePeople()
+  const { activePlan } = usePlanStore()
   const assumptions = useAssumptions()
   const projection = useProjectionContext()
 
-  const allAccounts = people.flatMap(p => p.accounts)
+  const accountGroups = groupBalances(activePlan.accounts)
   const totalGuaranteedPension = projection.totalAnnualPension + projection.totalAnnualCpp + projection.totalAnnualOas
   const portfolioAtRetirement = getPortfolioAtRetirement(projection.currentProjectionData)
   const tax = projection.retirementTax
@@ -46,7 +49,7 @@ export function OverviewTab() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 items-start">
         <PortfolioCard
           totalPortfolio={projection.totalPortfolio}
-          allAccounts={allAccounts}
+          groups={accountGroups}
         />
 
         <RetirementProjectionCard
@@ -89,6 +92,10 @@ export function OverviewTab() {
       </div>
 
       <RetirementTaxTable />
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 items-start">
+        <MilestonesCard />
+        <EstateCard />
+      </div>
 
       <div className="card p-4 sm:p-6">
         <h3 className="text-lg font-semibold text-gray-800 dark:text-white mb-4 flex items-center gap-2">
