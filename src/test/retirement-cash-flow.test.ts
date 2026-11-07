@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildRetirementCashFlow } from '@/lib/retirementCashFlow'
+import { buildRetirementCashFlow } from '@/lib/legacy/retirementCashFlow'
 
 const person = {
   name: 'You',

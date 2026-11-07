@@ -6,7 +6,7 @@ import {
   calculateYearlyProjections,
   calculateSimpleProjection,
   projectPersonAccounts,
-} from '@/lib/engine'
+} from '@/lib/legacy/engine'
 import type { HouseholdConfig, AccountBalance, ContributionConfig, Assumptions } from '@/types/household'
 import type { Account } from '@/types/person'
 

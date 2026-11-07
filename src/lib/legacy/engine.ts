@@ -8,6 +8,10 @@ import type {
 } from '@/types/household'
 import type { Account } from '@/types/person'
 import type { ProjectionDataPoint } from '@/types/projection'
+import { calculateFutureValue } from '@/lib/sim/math'
+
+// Original (v1) projection engine. Kept only as the reference implementation
+// for the parity tests in src/test/sim-parity.test.ts.
 
 export interface SimpleProjection {
   year: number
@@ -15,23 +19,7 @@ export interface SimpleProjection {
   portfolioValue: number
 }
 
-/**
- * Calculates compound future value with monthly compounding and contributions.
- */
-export function calculateFutureValue(
-  presentValue: number,
-  monthlyContribution: number,
-  monthlyReturnRate: number,
-  months: number
-): number {
-  if (Math.abs(monthlyReturnRate) < Number.EPSILON) {
-    return presentValue + monthlyContribution * months
-  }
-  const factor = Math.pow(1 + monthlyReturnRate, months)
-  const fvOfPv = presentValue * factor
-  const fvOfContributions = monthlyContribution * ((factor - 1) / monthlyReturnRate)
-  return fvOfPv + fvOfContributions
-}
+export { calculateFutureValue }
 
 export function calculateSafeWithdrawal(netWorth: number): number {
   return netWorth * 0.04

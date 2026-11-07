@@ -19,7 +19,15 @@ All commands should be run from the repository root:
 
 ## Architecture
 
-The application is 100% pure TypeScript (React + Vite). All financial compounding, Monte Carlo simulations, and retirement drawdown calculations are executed synchronously client-side in `src/lib/engine.ts` and `src/lib/projectionSim.ts`.
+The application is 100% pure TypeScript (React + Vite). All calculations run client-side.
+
+- **Unified engine** (`src/lib/sim/`):
+  - `compilePlan(plan, { startYear })` resolves a v2 plan once.
+  - `simulate(compiled, marketPath)` runs a year-by-year household simulation in nominal dollars.
+  - `legacyAdapter.ts` turns the output into the series the existing charts use.
+  - Deterministic projections, scenario bands and (later) Monte Carlo and backtests all reuse `simulate`.
+- **Monte Carlo** (`src/lib/projectionSim.ts`): still the original implementation, until it moves onto `simulate`.
+- **Original engine** (`src/lib/legacy/`): kept only as the reference for `src/test/sim-parity.test.ts`.
 
 ## GitHub Actions
 
@@ -110,8 +118,10 @@ App.tsx (provider shell)
 
 ## Testing
 
-### Frontend (157 tests)
-- `src/test/engine.test.ts` - Core calculation engine unit tests (projections, compounding, withdrawal)
+### Frontend (173 tests)
+- `src/test/engine.test.ts` - Original (legacy) engine unit tests
+- `src/test/sim-parity.test.ts` - Unified engine matches the original engine within $1
+- `src/test/rng.test.ts` - Seeded PRNG
 - `src/test/cpp.test.ts` - CPP start-age adjustment factor and income-gating tests
 - `src/test/tax.test.ts` - Quebec 2026 income tax, credits, OAS clawback, household tax allocation
 - `src/test/people-context.test.tsx` - usePeople compatibility hook tests (CRUD, selection, import)
@@ -123,7 +133,7 @@ App.tsx (provider shell)
 - `src/test/setup.test.ts` - Test harness verification
 
 ### Shared Utilities
-- `src/lib/engine.ts` - Core deterministic retirement calculation engine
+- `src/lib/sim/` - Unified year-by-year simulation engine
 - `src/lib/projectionSim.ts` - Monte Carlo stochastic uncertainty simulation & drawdown
 - `src/lib/tax.ts` - Quebec 2026 income tax estimator (brackets, credits, OAS clawback, household allocation)
 - `src/lib/formatting.ts` - `formatMoney()`, `formatCompactMoney()` for all currency display

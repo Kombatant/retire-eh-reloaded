@@ -1,42 +1,12 @@
-import { useMemo } from 'react'
-import { usePeople } from '@/contexts/PeopleContext'
 import { useAssumptions } from '@/contexts/AssumptionsContext'
 import { useProjectionContext } from '@/contexts/ProjectionContext'
-import { buildRetirementCashFlow } from '@/lib/retirementCashFlow'
 import { formatMoney } from '@/lib/formatting'
 import { ModeBadge } from '@/components/ui/ModeBadge'
 import { Table2 } from 'lucide-react'
 
 export function RetirementCashFlowTable() {
-  const { people } = usePeople()
   const assumptions = useAssumptions()
-  const projection = useProjectionContext()
-
-  const rows = useMemo(() => {
-    const lastPoint = projection.realProjectionData[projection.realProjectionData.length - 1]
-    return buildRetirementCashFlow({
-      people,
-      rrspAtRetirement: lastPoint?.RRSP ?? 0,
-      tfsaAtRetirement: lastPoint?.TFSA ?? 0,
-      expectedReturnPct: assumptions.expectedReturn,
-      inflationPct: assumptions.inflationRate,
-      withdrawalRatePct: assumptions.withdrawalRate,
-      householdRetirementAge: projection.householdRetirementAge,
-      yearsToRetirement: projection.yearsToRetirement,
-      showRealValues: assumptions.showRealValues,
-      plannedGifts: assumptions.plannedGifts,
-    })
-  }, [
-    people,
-    assumptions.expectedReturn,
-    assumptions.inflationRate,
-    assumptions.withdrawalRate,
-    assumptions.showRealValues,
-    assumptions.plannedGifts,
-    projection.realProjectionData,
-    projection.householdRetirementAge,
-    projection.yearsToRetirement,
-  ])
+  const { retirementCashFlow: rows } = useProjectionContext()
 
   if (rows.length === 0) return null
 
