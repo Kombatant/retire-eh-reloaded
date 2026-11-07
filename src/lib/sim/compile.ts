@@ -1,17 +1,18 @@
 import type { ExpenseItem, GrowthRule, IncomeStream, PlanV2, TimePoint } from '@/lib/plan/schema'
 import { resolveYear } from '@/lib/plan/time'
 import { cppAmountAt65 } from '@/lib/plan/legacy-view'
-import type { CompiledAccount, CompiledExpense, CompiledFlow, CompiledIncome, CompiledPerson, CompiledPlan } from './types'
+import type { CompiledAccount, CompiledExpense, CompiledFlow, CompiledIncome, CompiledPerson, CompiledPlan, RuleSet } from './types'
 
 const TAXABLE_ACCOUNT_TYPES = new Set(['RRSP', 'RRIF', 'LIRA', 'LIF'])
 
 export interface CompileOptions {
   startYear: number
+  rules?: RuleSet
 }
 
 // Resolve everything that does not depend on the market path once, so Monte
 // Carlo and backtests can re-run `simulate` cheaply on the same plan.
-export function compilePlan(plan: PlanV2, { startYear }: CompileOptions): CompiledPlan {
+export function compilePlan(plan: PlanV2, { startYear, rules = 'v2' }: CompileOptions): CompiledPlan {
   const offsetOf = (point: TimePoint | undefined, fallback: number) =>
     resolveYear(point, plan.people, startYear, startYear + fallback) - startYear
 
@@ -24,6 +25,8 @@ export function compilePlan(plan: PlanV2, { startYear }: CompileOptions): Compil
     cppAt65: cppAmountAt65(p),
     cppStartAge: p.cppStartAge,
     oasStartAge: p.oas.startAge,
+    province: p.province,
+    yearsInCanadaAfter18: p.oas.yearsInCanadaAfter18,
   }))
   const personIndex = new Map(people.map((p, i) => [p.id, i]))
 
@@ -69,31 +72,37 @@ export function compilePlan(plan: PlanV2, { startYear }: CompileOptions): Compil
 
   // Reinvested RRSP refunds are after-tax cash, so they land in the owner's
   // TFSA. People without a TFSA get a synthetic one to receive them.
-  if (plan.assumptions.reinvestRrspRefund && plan.assumptions.workingMarginalTaxRate > 0) {
-    const rate = plan.assumptions.workingMarginalTaxRate / 100
+  // v1 used a flat marginal rate; v2 computes the refund with the tax engine.
+  const refundTargets = people.map(() => -1)
+  if (plan.assumptions.reinvestRrspRefund) {
+    const flatRate = plan.assumptions.workingMarginalTaxRate / 100
     people.forEach((person, idx) => {
-      const refundFlows = accounts
+      const rrspFlows = accounts
         .filter(a => a.ownerIndex === idx && a.type === 'RRSP')
         .flatMap(a => a.contributions)
-        .map(flow => ({ ...flow, amount: flow.amount * rate }))
         .filter(flow => flow.amount > 0)
-      if (refundFlows.length === 0) return
-      let target = accounts.find(a => a.ownerIndex === idx && a.type === 'TFSA')
-      if (!target) {
-        target = {
+      if (rrspFlows.length === 0) return
+      if (rules === 'v1' && flatRate <= 0) return
+      let targetIndex = accounts.findIndex(a => a.ownerIndex === idx && a.type === 'TFSA')
+      if (targetIndex < 0) {
+        accounts.push({
           id: `${person.id}-refund-tfsa`, type: 'TFSA', ownerIndex: idx, taxable: false,
           initialBalance: 0, contributions: [], synthetic: true,
-        }
-        accounts.push(target)
+        })
+        targetIndex = accounts.length - 1
       }
-      target.contributions.push(...refundFlows)
+      if (rules === 'v1') {
+        accounts[targetIndex].contributions.push(...rrspFlows.map(flow => ({ ...flow, amount: flow.amount * flatRate })))
+      } else {
+        refundTargets[idx] = targetIndex
+      }
     })
   }
 
   const incomes: CompiledIncome[] = plan.incomes.flatMap(stream => {
     const owner = personIndex.get(stream.ownerId)
     if (owner === undefined) return []
-    return [{ personIndex: owner, kind: stream.kind, flow: incomeFlow(stream, offsetOf, years) }]
+    return [{ personIndex: owner, kind: stream.kind, taxTreatment: stream.taxTreatment, flow: incomeFlow(stream, offsetOf, years) }]
   })
 
   const expenses: CompiledExpense[] = plan.expenses.items.map(item => ({
@@ -106,6 +115,7 @@ export function compilePlan(plan: PlanV2, { startYear }: CompileOptions): Compil
 
   const strategy = plan.drawdown.strategy
   return {
+    rules,
     startYear,
     years,
     drawdownStartOffset,
@@ -114,6 +124,8 @@ export function compilePlan(plan: PlanV2, { startYear }: CompileOptions): Compil
     incomes,
     expenses,
     initialWithdrawalRatePct: strategy.kind === 'initialPct' ? strategy.ratePct : 4,
+    pensionSplitting: plan.drawdown.pensionSplitting,
+    refundTargets,
     expectedReturnPct: plan.assumptions.expectedReturn,
     inflationPct: plan.assumptions.inflationRate,
   }

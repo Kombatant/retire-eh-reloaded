@@ -2,7 +2,7 @@ import { planSchema, MAX_CPP_ANNUAL_2026, type PersonV2, type PlanV2, type Provi
 import { newId } from './ids'
 
 // Province for brand-new plans. Migrated plans keep Quebec (see migrate.ts).
-export const DEFAULT_PROVINCE: ProvinceCode = 'QC'
+export const DEFAULT_PROVINCE: ProvinceCode = 'ON'
 
 export function isoDate(now: Date): string {
   return now.toISOString().slice(0, 10)

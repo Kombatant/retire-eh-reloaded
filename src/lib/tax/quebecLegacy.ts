@@ -1,3 +1,5 @@
+// Original v1 Quebec retirement-tax estimator. Still used by the v1-compat
+// parity path and by components that need the pooled first-year summary.
 // Quebec 2026 retirement tax estimate.
 //
 // This is an estimator, not a tax return. It models the 2026 federal and

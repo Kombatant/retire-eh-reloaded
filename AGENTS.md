@@ -118,12 +118,14 @@ App.tsx (provider shell)
 
 ## Testing
 
-### Frontend (173 tests)
+### Frontend (218 tests)
 - `src/test/engine.test.ts` - Original (legacy) engine unit tests
 - `src/test/sim-parity.test.ts` - Unified engine matches the original engine within $1
 - `src/test/rng.test.ts` - Seeded PRNG
 - `src/test/cpp.test.ts` - CPP start-age adjustment factor and income-gating tests
-- `src/test/tax.test.ts` - Quebec 2026 income tax, credits, OAS clawback, household tax allocation
+- `src/test/tax.test.ts` - Original Quebec estimator (v1 parity path)
+- `src/test/tax-provinces.test.ts` - All-province 2026 tax, payroll, splitting, OAS/GIS/CPP benefits
+- `src/test/sim-v2.test.ts` - Engine behaviour under current (v2) rules
 - `src/test/people-context.test.tsx` - usePeople compatibility hook tests (CRUD, selection, import)
 - `src/test/plan-migration.test.ts` - v1 → v2 migration, legacy localStorage, plan storage, plan edits
 - `src/test/plan-store.test.tsx` - multi-plan store and persistence
@@ -135,7 +137,13 @@ App.tsx (provider shell)
 ### Shared Utilities
 - `src/lib/sim/` - Unified year-by-year simulation engine
 - `src/lib/projectionSim.ts` - Monte Carlo stochastic uncertainty simulation & drawdown
-- `src/lib/tax.ts` - Quebec 2026 income tax estimator (brackets, credits, OAS clawback, household allocation)
+- `src/lib/tax/`:
+  - `data/2026.ts`: 2026 tables for federal and all 13 jurisdictions, with sources. Update this file yearly.
+  - `personal.ts`: income tax for one person.
+  - `household.ts`: pension income splitting.
+  - `payroll.ts`: CPP/QPP/EI.
+  - `quebecLegacy.ts`: the original v1 estimator.
+- `src/lib/benefits/`: CPP/QPP estimate and survivor pension, OAS (residency, deferral, +10% at 75), GIS.
 - `src/lib/formatting.ts` - `formatMoney()`, `formatCompactMoney()` for all currency display
 - `src/hooks/useRetirementGoal.ts` - Shared goal calculation hook
 - `src/lib/validation.ts` - Zod schemas for YAML import and form validation

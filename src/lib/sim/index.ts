@@ -13,9 +13,9 @@ import type { SimResult, CompiledPlan } from './types'
 // Convenience: compile + simulate at the plan's own expected return/inflation.
 export function simulatePlan(
   plan: PlanV2,
-  opts: { startYear: number; returnPct?: number; inflationPct?: number },
+  opts: { startYear: number; returnPct?: number; inflationPct?: number; rules?: 'v1' | 'v2' },
 ): { compiled: CompiledPlan; result: SimResult } {
-  const compiled = compilePlan(plan, { startYear: opts.startYear })
+  const compiled = compilePlan(plan, { startYear: opts.startYear, rules: opts.rules })
   const path = deterministicPath(
     compiled.years,
     opts.returnPct ?? compiled.expectedReturnPct,

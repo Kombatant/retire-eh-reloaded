@@ -112,7 +112,7 @@ const sections: LearnSection[] = [
         </p>
         <p className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-800 text-xs">
           <strong className="text-gray-800 dark:text-gray-200 block mb-1">Pre-Tax vs. After-Tax Projections:</strong>
-          Because RRSP withdrawals are taxed as regular income, a dollar in an RRSP does not have the same purchasing power as a dollar in a TFSA. This app estimates federal and Quebec income tax (2026 rates), including the Quebec abatement, age and pension credits, and the OAS clawback, for each person's retirement income. That estimated tax is used to compute your <strong>After-Tax Net Worth</strong> and target progress, so you can see how much additional savings you need to cover both your base goals and your expected tax liabilities.
+          Because RRSP withdrawals are taxed as regular income, a dollar in an RRSP does not have the same purchasing power as a dollar in a TFSA. This app estimates 2026 federal and provincial income tax for each person's province or territory, including the basic, age and pension credits, the OAS clawback, GIS, and pension income splitting between spouses. That estimated tax is used to compute your <strong>After-Tax Net Worth</strong> and target progress, so you can see how much additional savings you need to cover both your base goals and your expected tax liabilities.
         </p>
       </div>
     )

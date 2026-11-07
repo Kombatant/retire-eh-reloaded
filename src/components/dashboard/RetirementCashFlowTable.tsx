@@ -79,7 +79,7 @@ export function RetirementCashFlowTable() {
 
       <div className="mt-3 space-y-1 text-[11px] text-gray-500 dark:text-gray-400">
         <p>
-          Tax includes federal and Quebec income tax plus the OAS clawback. TFSA withdrawals are excluded from taxable
+          Tax includes federal and provincial income tax plus the OAS clawback. TFSA withdrawals are excluded from taxable
           income. The OAS clawback is deducted before tax. RRIF minimum withdrawals are not modeled.
         </p>
         {giftsTotal > 0 && (

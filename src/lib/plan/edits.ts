@@ -17,7 +17,7 @@ import { detachPersonTimePoints, youngestPerson } from './time'
 
 type PersonPatch = Partial<PersonV2>
 
-function patchPerson(plan: PlanV2, personId: string, patch: PersonPatch): PlanV2 {
+export function patchPerson(plan: PlanV2, personId: string, patch: PersonPatch): PlanV2 {
   return { ...plan, people: plan.people.map(p => (p.id === personId ? { ...p, ...patch } : p)) }
 }
 

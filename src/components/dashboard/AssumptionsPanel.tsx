@@ -9,8 +9,6 @@ interface AssumptionsPanelProps {
   setReplacementRate: (value: number) => void
   withdrawalRate: number
   setWithdrawalRate: (value: number) => void
-  workingMarginalTaxRate: number
-  setWorkingMarginalTaxRate: (value: number) => void
   reinvestRrspRefund: boolean
   setReinvestRrspRefund: (value: boolean) => void
 }
@@ -70,8 +68,6 @@ export function AssumptionsPanel({
   setReplacementRate,
   withdrawalRate,
   setWithdrawalRate,
-  workingMarginalTaxRate,
-  setWorkingMarginalTaxRate,
   reinvestRrspRefund,
   setReinvestRrspRefund,
 }: AssumptionsPanelProps) {
@@ -115,15 +111,6 @@ export function AssumptionsPanel({
           step={0.1}
           onChange={setWithdrawalRate}
         />
-        <AssumptionField
-          label="Working Tax Rate"
-          tooltip="Estimated marginal tax rate while working. Used only to estimate the refund from RRSP contributions."
-          value={workingMarginalTaxRate}
-          min={0}
-          max={60}
-          step={1}
-          onChange={setWorkingMarginalTaxRate}
-        />
         <label className="flex items-start gap-2 text-xs text-gray-600 dark:text-gray-300 cursor-pointer">
           <input
             type="checkbox"
@@ -132,12 +119,12 @@ export function AssumptionsPanel({
             className="mt-0.5 accent-indigo-500"
           />
           <span>
-            Reinvest RRSP tax refunds <InfoTooltip text="When enabled, the estimated refund from RRSP contributions is added to a TFSA and compounded. Leave off to keep the projection conservative." />
+            Reinvest RRSP tax refunds <InfoTooltip text="When enabled, the tax refund from each year's RRSP contributions (calculated from your income and province) is added to a TFSA and compounded. Leave off to keep the projection conservative." />
           </span>
         </label>
       </div>
       <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-4 leading-relaxed">
-        Retirement income tax is estimated automatically using 2026 Quebec federal and provincial rates.
+        Income tax is estimated automatically with 2026 federal and provincial rules for each person's province.
       </p>
     </div>
   )

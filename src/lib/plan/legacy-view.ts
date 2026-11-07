@@ -1,6 +1,7 @@
 import type { Account, Person } from '@/types/person'
 import type { PlanAssumptions, PlannedGift, RetirementPlan } from '@/types/plan'
-import { GIFT_CATEGORY, MAX_CPP_ANNUAL_2026, type PersonV2, type PlanV2, type UiPrefs } from './schema'
+import { estimateCppAt65 } from '@/lib/benefits/cpp'
+import { GIFT_CATEGORY, type PersonV2, type PlanV2, type UiPrefs } from './schema'
 import { resolveYear, youngestPerson } from './time'
 
 // Read-only projection of a v2 plan into the v1 shapes the current components
@@ -8,10 +9,12 @@ import { resolveYear, youngestPerson } from './time'
 
 export function cppAmountAt65(person: PersonV2): number {
   if (person.cpp.mode === 'amount') return person.cpp.amountAt65
-  // Rough placeholder until the earnings-based CPP calculator lands: scale the
-  // maximum by earnings ratio and the share of a full 39-year contributory period.
-  const yearsFactor = Math.min(1, person.cpp.contributoryYears / 39)
-  return MAX_CPP_ANNUAL_2026 * (person.cpp.averageEarningsRatioPct / 100) * yearsFactor
+  return estimateCppAt65({
+    averageEarningsRatioPct: person.cpp.averageEarningsRatioPct,
+    contributoryYears: person.cpp.contributoryYears,
+    birthYear: person.birthYear,
+    retirementAge: person.retirementAge,
+  })
 }
 
 function legacyAccounts(plan: PlanV2, personId: string): Account[] {

@@ -66,8 +66,6 @@ export function PlanTab() {
           setReplacementRate={assumptions.setReplacementRate}
           withdrawalRate={assumptions.withdrawalRate}
           setWithdrawalRate={assumptions.setWithdrawalRate}
-          workingMarginalTaxRate={assumptions.workingMarginalTaxRate}
-          setWorkingMarginalTaxRate={assumptions.setWorkingMarginalTaxRate}
           reinvestRrspRefund={assumptions.reinvestRrspRefund}
           setReinvestRrspRefund={assumptions.setReinvestRrspRefund}
         />

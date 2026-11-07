@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import type { Person } from '@/types/household'
 import { InfoTooltip } from './InfoTooltip'
 import { AccountCard } from './AccountCard'
+import { PersonDetails } from './PersonDetails'
 import { NumberInput } from '@/components/ui/NumberInput'
 import { validateAge, validateRetirementAge } from '@/lib/validation'
 import {
@@ -196,6 +197,8 @@ export function PersonForm({
           />
         </div>
       </div>
+
+      <PersonDetails personId={person.id} />
 
       {person.retirementAge <= person.currentAge && !validateRetirementAge(person.retirementAge, person.currentAge) && (
         <div className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-2 py-1.5 rounded border border-amber-200 dark:border-amber-800">

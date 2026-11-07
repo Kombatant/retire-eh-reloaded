@@ -80,7 +80,7 @@ function legacy(people: Person[], a: PlanAssumptions, showReal: boolean) {
 function engine(people: Person[], a: PlanAssumptions, showReal: boolean) {
   const v1: RetirementPlan = { version: '1.0', assumptions: a, people }
   const { plan } = migrateV1ToV2(v1, { now: NOW })
-  const { compiled, result } = simulatePlan(plan, { startYear: YEAR })
+  const { compiled, result } = simulatePlan(plan, { startYear: YEAR, rules: 'v1' })
   return {
     projection: toProjectionData(compiled, result, showReal),
     cashFlow: toCashFlowRows(compiled, result, showReal),

@@ -1,7 +1,8 @@
 import { useRetirementGoal } from '@/hooks/useRetirementGoal'
 import { formatMoney } from '@/lib/formatting'
 import { getPortfolioAtRetirement, getPortfolioAfterGifts } from '@/lib/calculations'
-import type { RetirementTaxSummary } from '@/lib/tax'
+import type { RetirementTaxSnapshot } from '@/lib/sim/taxSnapshot'
+import { jurisdictionLabel } from '@/lib/tax'
 import { CheckCircle2, AlertTriangle, Lightbulb, Gift } from 'lucide-react'
 import { ModeBadge } from '@/components/ui/ModeBadge'
 
@@ -22,7 +23,7 @@ interface SummaryCardProps {
   plannedGifts: import('@/lib/calculations').PlannedGiftLite[]
   effectiveTaxRate?: number
   afterTaxAnnualIncome?: number
-  taxSummary?: RetirementTaxSummary | null
+  taxSummary?: RetirementTaxSnapshot | null
 }
 
 export function SummaryCard(props: SummaryCardProps) {
@@ -106,7 +107,7 @@ export function SummaryCard(props: SummaryCardProps) {
           </div>
           <div className="text-[10px] text-gray-500 dark:text-gray-400 mt-1.5 leading-relaxed">
             {taxSummary
-              ? <>Estimated ${formatMoney(estimatedTax ?? 0)} tax on ${formatMoney(projectedAnnualIncome)} (Quebec 2026)</>
+              ? <>Estimated ${formatMoney(estimatedTax ?? 0)} tax on ${formatMoney(projectedAnnualIncome)} ({jurisdictionLabel(taxSummary.perPerson.map(p => p.province))} 2026)</>
               : <>Adjusted for {(goalProps.effectiveTaxRate ?? 0).toFixed(1)}% tax on RRSP withdrawals</>}
           </div>
         </div>

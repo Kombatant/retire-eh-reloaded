@@ -30,7 +30,9 @@ function sumWhere(c: CompiledPlan, balances: number[], type: 'RRSP' | 'TFSA'): n
 
 // v1 charts hid a series when no account of that type had money or contributions.
 function hasSeries(c: CompiledPlan, type: 'RRSP' | 'TFSA'): boolean {
-  return c.accounts.some(a => a.type === type && (a.initialBalance > 0 || a.contributions.some(f => f.amount > 0)))
+  return c.accounts.some((a, i) => a.type === type && (
+    a.initialBalance > 0 || a.contributions.some(f => f.amount > 0) || c.refundTargets.includes(i)
+  ))
 }
 
 // Start-of-year balances from today through the first drawdown year.

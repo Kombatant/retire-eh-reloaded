@@ -1,7 +1,7 @@
 import { useAssumptions } from '@/contexts/AssumptionsContext'
 import { useProjectionContext } from '@/contexts/ProjectionContext'
 import { formatMoney } from '@/lib/formatting'
-import { QUEBEC_CREDIT_REDUCTION_THRESHOLD_2026 } from '@/lib/tax'
+import { jurisdictionLabel } from '@/lib/tax'
 import { ModeBadge } from '@/components/ui/ModeBadge'
 import { Calculator } from 'lucide-react'
 
@@ -11,6 +11,8 @@ export function RetirementTaxTable() {
   const tax = projection.retirementTax
 
   if (!tax) return null
+  const jurisdiction = jurisdictionLabel(tax.perPerson.map(p => p.province))
+  const anySplit = tax.perPerson.some(p => Math.abs(p.pensionSplit) > 1)
 
   return (
     <div className="card p-4 sm:p-6">
@@ -20,8 +22,8 @@ export function RetirementTaxTable() {
         <ModeBadge showRealValues={assumptions.showRealValues} />
       </h2>
       <p className="mb-4 text-xs text-gray-500 dark:text-gray-400">
-        Estimated at household retirement (age {projection.householdRetirementAge}) using 2026 federal and Quebec rules.
-        RRSP/RRIF withdrawals are allocated across people to reduce household tax.
+        Estimated at household retirement (age {projection.householdRetirementAge}) using 2026 federal and {jurisdiction} rules.
+        RRSP/RRIF withdrawals are taxed to the account owner{anySplit ? ', with pension income splitting applied where it lowers household tax' : ''}.
       </p>
 
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -60,7 +62,7 @@ export function RetirementTaxTable() {
               <th className="px-3 py-2 text-right font-medium">RRSP/RRIF</th>
               <th className="px-3 py-2 text-right font-medium">Taxable income</th>
               <th className="px-3 py-2 text-right font-medium">Federal</th>
-              <th className="px-3 py-2 text-right font-medium">Quebec</th>
+              <th className="px-3 py-2 text-right font-medium">Provincial</th>
               <th className="px-3 py-2 text-right font-medium">Clawback</th>
               <th className="px-3 py-2 text-right font-medium">Total tax</th>
               <th className="px-3 py-2 text-right font-medium">After-tax*</th>
@@ -81,7 +83,7 @@ export function RetirementTaxTable() {
                   <td className="px-3 py-2 text-right">${formatMoney(person.rrifWithdrawal)}</td>
                   <td className="px-3 py-2 text-right">${formatMoney(person.taxableIncome)}</td>
                   <td className="px-3 py-2 text-right">${formatMoney(person.federal)}</td>
-                  <td className="px-3 py-2 text-right">${formatMoney(person.quebec)}</td>
+                  <td className="px-3 py-2 text-right">${formatMoney(person.provincial)}</td>
                   <td className="px-3 py-2 text-right text-amber-700 dark:text-amber-400">${formatMoney(person.oasClawback)}</td>
                   <td className="px-3 py-2 text-right font-medium text-rose-600 dark:text-rose-400">${formatMoney(person.total)}</td>
                   <td className="px-3 py-2 text-right font-medium text-emerald-700 dark:text-emerald-400">${formatMoney(afterTax)}</td>
@@ -101,7 +103,7 @@ export function RetirementTaxTable() {
               <td className="px-3 py-2 text-right">${formatMoney(tax.taxableWithdrawal)}</td>
               <td className="px-3 py-2 text-right">${formatMoney(tax.perPerson.reduce((sum, p) => sum + p.taxableIncome, 0))}</td>
               <td className="px-3 py-2 text-right">${formatMoney(tax.perPerson.reduce((sum, p) => sum + p.federal, 0))}</td>
-              <td className="px-3 py-2 text-right">${formatMoney(tax.perPerson.reduce((sum, p) => sum + p.quebec, 0))}</td>
+              <td className="px-3 py-2 text-right">${formatMoney(tax.perPerson.reduce((sum, p) => sum + p.provincial, 0))}</td>
               <td className="px-3 py-2 text-right">${formatMoney(tax.oasClawback)}</td>
               <td className="px-3 py-2 text-right">${formatMoney(tax.totalTax)}</td>
               <td className="px-3 py-2 text-right">
@@ -121,9 +123,9 @@ export function RetirementTaxTable() {
         {formatMoney(tax.afterTaxIncome)}.
       </p>
       <p className="mt-2 text-[11px] text-gray-500 dark:text-gray-400">
-        Estimates only. Excludes capital gains, dividends, and other credits. The Quebec age and retirement-income
-        amounts are phased out above ${formatMoney(QUEBEC_CREDIT_REDUCTION_THRESHOLD_2026)} of income, and the OAS clawback is deducted from income
-        before tax. TFSA withdrawals are tax-free and not shown as taxable income.
+        Estimates only. Includes the main federal and provincial credits (basic, age, pension income), the OAS
+        clawback, GIS, and pension income splitting (up to 50% of eligible pension income; RRIF income from age 65).
+        TFSA withdrawals are tax-free and not shown as taxable income.
       </p>
     </div>
   )

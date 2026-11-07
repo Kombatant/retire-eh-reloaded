@@ -13,8 +13,9 @@ import {
   type CompiledPlan,
   type SimResult,
 } from '@/lib/sim'
-import { buildGuaranteedIncomeSchedule, getCppIncomeAtAge, getGiftTotal, getOasIncomeAtAge } from '@/lib/calculations'
-import { computeRetirementTaxSummary, OAS_MAX_ANNUAL_2026, type RetirementTaxSummary } from '@/lib/tax'
+import { buildGuaranteedIncomeSchedule, getCppIncomeAtAge, getOasIncomeAtAge } from '@/lib/calculations'
+import { OAS_MAX_ANNUAL_2026 } from '@/lib/tax'
+import { buildRetirementTaxSnapshot, type RetirementTaxSnapshot } from '@/lib/sim/taxSnapshot'
 import type { ProjectionDataPoint } from '@/types/projection'
 
 interface ProjectionContextValueTyped {
@@ -37,51 +38,14 @@ interface ProjectionContextValueTyped {
   guaranteedIncomeSchedule: number[]
   totalPortfolio: number
   totalAnnualContributions: number
-  retirementTax: RetirementTaxSummary | null
+  retirementTax: RetirementTaxSnapshot | null
 }
 
 const ProjectionContext = createContext<ProjectionContextValueTyped | null>(null)
 
-function scaleRetirementTaxSummary(
-  summary: RetirementTaxSummary,
-  factor: number,
-): RetirementTaxSummary {
-  if (factor === 1) return summary
-  return {
-    ...summary,
-    perPerson: summary.perPerson.map(p => ({
-      ...p,
-      pension: p.pension * factor,
-      cpp: p.cpp * factor,
-      oas: p.oas * factor,
-      rrifWithdrawal: p.rrifWithdrawal * factor,
-      taxableIncome: p.taxableIncome * factor,
-      federal: p.federal * factor,
-      quebec: p.quebec * factor,
-      oasClawback: p.oasClawback * factor,
-      total: p.total * factor,
-    })),
-    guaranteedIncome: summary.guaranteedIncome * factor,
-    portfolioWithdrawal: summary.portfolioWithdrawal * factor,
-    taxableWithdrawal: summary.taxableWithdrawal * factor,
-    taxFreeWithdrawal: summary.taxFreeWithdrawal * factor,
-    rrspTax: summary.rrspTax * factor,
-    totalTax: summary.totalTax * factor,
-    oasClawback: summary.oasClawback * factor,
-    preTaxIncome: summary.preTaxIncome * factor,
-    afterTaxIncome: summary.afterTaxIncome * factor,
-  }
-}
-
 export function ProjectionProvider({ children }: { children: ReactNode }) {
   const { people } = usePeople()
-  const {
-    expectedReturn,
-    inflationRate,
-    showRealValues,
-    withdrawalRate,
-    plannedGifts,
-  } = useAssumptions()
+  const { expectedReturn, showRealValues } = useAssumptions()
 
   const { activePlan, nowYear } = usePlanStore()
 
@@ -139,37 +103,10 @@ export function ProjectionProvider({ children }: { children: ReactNode }) {
     [compiledPlan, simulation, showRealValues]
   )
 
-  const retirementTax = useMemo(() => {
-    if (people.length === 0 || realProjectionData.length === 0) return null
-
-    const incomePeople = people.map(p => {
-      const ageAtRetirement = p.currentAge + yearsToRetirement
-      return {
-        name: p.name,
-        ageAtRetirement,
-        pension: p.annualPension || 0,
-        cpp: getCppIncomeAtAge(p.annualCpp, p.cppStartAge, ageAtRetirement),
-        oas: getOasIncomeAtAge(OAS_MAX_ANNUAL_2026, p.oasStartAge, ageAtRetirement),
-      }
-    })
-
-    // Brackets and credits are fixed to 2026, so tax must be computed in
-    // today's dollars. Converting the dollar results afterwards keeps the
-    // effective rate identical in real and nominal display modes.
-    const lastPoint = realProjectionData[realProjectionData.length - 1]
-    const giftTotal = getGiftTotal(plannedGifts, yearsToRetirement, true, inflationRate)
-    const portfolioWithdrawal = Math.max(0, (lastPoint.Total ?? 0) - giftTotal) * (withdrawalRate / 100)
-    const summary = computeRetirementTaxSummary({
-      people: incomePeople,
-      rrspAtRetirement: lastPoint.RRSP ?? 0,
-      tfsaAtRetirement: lastPoint.TFSA ?? 0,
-      portfolioWithdrawal,
-    })
-
-    if (showRealValues) return summary
-    const inflationFactor = Math.pow(1 + inflationRate / 100, Math.max(0, yearsToRetirement))
-    return scaleRetirementTaxSummary(summary, inflationFactor)
-  }, [people, realProjectionData, yearsToRetirement, showRealValues, inflationRate, withdrawalRate, plannedGifts])
+  const retirementTax = useMemo(
+    () => (people.length ? buildRetirementTaxSnapshot(compiledPlan, simulation, showRealValues) : null),
+    [people.length, compiledPlan, simulation, showRealValues],
+  )
 
   return (
     <ProjectionContext.Provider value={{

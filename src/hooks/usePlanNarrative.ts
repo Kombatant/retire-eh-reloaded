@@ -3,6 +3,7 @@ import { useAssumptions } from '@/contexts/AssumptionsContext'
 import { useProjectionContext } from '@/contexts/ProjectionContext'
 import { useRetirementGoal } from '@/hooks/useRetirementGoal'
 import { buildPlanNarrative } from '@/lib/narrative'
+import { jurisdictionLabel } from '@/lib/tax'
 
 export function usePlanNarrative() {
   const { people } = usePeople()
@@ -68,6 +69,7 @@ export function usePlanNarrative() {
     gap,
     additionalAnnualSavings,
     taxTotal: tax?.totalTax,
+    taxJurisdiction: tax ? jurisdictionLabel(tax.perPerson.map(p => p.province)) : undefined,
     oasClawback: tax?.oasClawback,
   })
 

@@ -30,6 +30,8 @@ export interface PlanNarrativeInput {
   gap: number
   additionalAnnualSavings: number
   taxTotal?: number
+  // e.g. "Ontario"; used in the tax sentence.
+  taxJurisdiction?: string
   oasClawback?: number
 }
 
@@ -78,6 +80,7 @@ export function buildPlanNarrative(input: PlanNarrativeInput): PlanNarrative {
     gap,
     additionalAnnualSavings,
     taxTotal = 0,
+    taxJurisdiction = 'provincial',
     oasClawback = 0,
   } = input
 
@@ -132,7 +135,7 @@ export function buildPlanNarrative(input: PlanNarrativeInput): PlanNarrative {
     ? ` Guaranteed income of ${money(guaranteedAnnualIncome)} covers part of that; the portfolio supplies ${money(portfolioWithdrawal)} at ${withdrawalRate}%.`
     : ` The portfolio supplies ${money(portfolioWithdrawal)} at ${withdrawalRate}%.`
   const taxSentence = taxTotal > 0
-    ? ` Estimated 2026 Quebec tax is about ${money(taxTotal)}${oasClawback > 0 ? `, including ${money(oasClawback)} of OAS clawback` : ''}.`
+    ? ` Estimated 2026 federal and ${taxJurisdiction} tax is about ${money(taxTotal)}${oasClawback > 0 ? `, including ${money(oasClawback)} of OAS clawback` : ''}.`
     : ''
   const leverSentence = gap <= 0
     ? ` That leaves about ${money(Math.abs(gap))} of cushion.`
