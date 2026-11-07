@@ -61,10 +61,9 @@ The app uses a horizontal tab layout with 4 sections:
 
 ```
 App.tsx (provider shell)
-├── PeopleProvider
-│   └── AssumptionsProvider
-│       └── ProjectionProvider
-│           └── AppContent
+├── PlanStoreProvider
+│   └── ProjectionProvider
+│       └── AppContent
 │               ├── Header.tsx (logo, export/import, dark mode)
 │               ├── Tabs.tsx (tab navigation)
 │               ├── Tab Content (one active at a time)
@@ -92,14 +91,16 @@ App.tsx (provider shell)
 
 ### State Management
 
-- State is split across React Context providers (see `src/contexts/`)
-- `PeopleProvider` owns people CRUD and selection via `useReducer`
-- `AssumptionsProvider` owns assumptions with localStorage persistence
-- `ProjectionProvider` derives projection data from both contexts
-- `usePersistence` hook coordinates localStorage writes
-- `App.tsx` is a thin layout shell that nests providers
-- Leaf components consume contexts directly via hooks (`usePeople`, `useAssumptions`, `useProjectionContext`)
-- Active tab state lives in `AppContent` component
+- The plan data model is versioned (`src/lib/plan/schema.ts`, zod, `schemaVersion: 2`). It is the single source of truth for persistence, YAML export and share links.
+- Every external plan source (YAML, share links, stored plans) goes through `parsePlanData` in `src/lib/plan/migrate.ts`. Older v1 files are migrated forward there.
+- `PlanStoreProvider` (`src/contexts/PlanStoreContext.tsx`) owns all saved plans, the active plan id, UI preferences and person selection, via `useReducer`.
+  - It persists everything under one localStorage key, `retireEh.v2`.
+  - On first load it migrates the original loose keys.
+- `usePeople` and `useAssumptions` are compatibility hooks. They present v1-shaped data (`src/lib/plan/legacy-view.ts`) and map edits onto pure v2 transforms (`src/lib/plan/edits.ts`).
+- New UI should use `usePlanStore()` directly.
+- `ProjectionProvider` derives projection data from the active plan.
+- `App.tsx` is a thin layout shell that nests providers.
+- Active tab state lives in `AppContent`.
 
 ### Mobile Responsiveness
 
@@ -109,11 +110,14 @@ App.tsx (provider shell)
 
 ## Testing
 
-### Frontend (84 tests)
+### Frontend (157 tests)
 - `src/test/engine.test.ts` - Core calculation engine unit tests (projections, compounding, withdrawal)
 - `src/test/cpp.test.ts` - CPP start-age adjustment factor and income-gating tests
 - `src/test/tax.test.ts` - Quebec 2026 income tax, credits, OAS clawback, household tax allocation
-- `src/test/people-context.test.tsx` - PeopleContext consumer tests (CRUD, selection, import)
+- `src/test/people-context.test.tsx` - usePeople compatibility hook tests (CRUD, selection, import)
+- `src/test/plan-migration.test.ts` - v1 → v2 migration, legacy localStorage, plan storage, plan edits
+- `src/test/plan-store.test.tsx` - multi-plan store and persistence
+- `src/test/app-smoke.test.tsx` - renders every tab; loads a v1-saved plan
 - `src/test/validation.test.ts` - Zod validation tests
 - `src/test/yaml-utils.test.ts` - YAML import/export tests
 - `src/test/setup.test.ts` - Test harness verification

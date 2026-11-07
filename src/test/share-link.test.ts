@@ -1,8 +1,13 @@
 import { describe, it, expect } from 'vitest'
-import { buildRetirementPlan } from '@/lib/yaml-utils'
+import yaml from 'js-yaml'
+import { deflateSync, strToU8 } from 'fflate'
 import { buildShareUrl, decodePlan, encodePlan, readSharePlanFromUrl } from '@/lib/share-link'
+import { migrateV1ToV2 } from '@/lib/plan/migrate'
+import { toLegacyPeople } from '@/lib/plan/legacy-view'
 import type { Person } from '@/types/person'
-import type { PlanAssumptions } from '@/types/plan'
+import type { PlanAssumptions, RetirementPlan } from '@/types/plan'
+
+const NOW = new Date('2026-06-15T12:00:00Z')
 
 const assumptions: PlanAssumptions = {
   expectedReturn: 7,
@@ -33,30 +38,43 @@ const people: Person[] = [
   },
 ]
 
+const v1: RetirementPlan = { version: '1.0', assumptions, people }
+const plan = migrateV1ToV2(v1, { now: NOW, id: 'plan-1' }).plan
+
+function base64Url(bytes: Uint8Array): string {
+  let binary = ''
+  bytes.forEach(b => { binary += String.fromCharCode(b) })
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
+}
+
 describe('share links', () => {
   it('round-trips a plan through the compressed URL payload', () => {
-    const encoded = encodePlan(buildRetirementPlan(assumptions, people))
-    const decoded = decodePlan(encoded)
+    const decoded = decodePlan(encodePlan(plan))
 
     expect(decoded).not.toBeNull()
-    expect(decoded!.people[0].name).toBe('Alice')
-    expect(decoded!.people[0].oasStartAge).toBe(70)
-    expect(decoded!.people[0].accounts[0].balance).toBe(250000)
-    expect(decoded!.assumptions.expectedReturn).toBe(7)
+    expect(decoded!.plan).toEqual(plan)
+  })
+
+  it('still opens links created by the v1 app', () => {
+    // v1 links carried deflated v1 YAML in the same fragment format.
+    const legacyPayload = base64Url(deflateSync(strToU8(yaml.dump(v1)), { level: 9 }))
+    const decoded = readSharePlanFromUrl(`https://example.com/retire-eh/#plan=${legacyPayload}`)
+
+    expect(decoded).not.toBeNull()
+    expect(decoded!.migratedFrom).toBe(1)
+    expect(toLegacyPeople(decoded!.plan, new Date().getFullYear())).toEqual(people)
   })
 
   it('builds a share URL with the plan in the fragment', () => {
-    const plan = buildRetirementPlan(assumptions, people)
     const url = buildShareUrl(plan, 'https://example.com/retire-eh/')
 
     expect(url).toMatch(/^https:\/\/example\.com\/retire-eh\/#plan=/)
     const decoded = readSharePlanFromUrl(url)
     expect(decoded).not.toBeNull()
-    expect(decoded!.people[0].name).toBe('Alice')
+    expect(decoded!.plan.people[0].name).toBe('Alice')
   })
 
   it('does not put the plan in plain text in the URL', () => {
-    const plan = buildRetirementPlan(assumptions, people)
     const url = buildShareUrl(plan, 'https://example.com/retire-eh/')
 
     expect(url).not.toContain('Alice')

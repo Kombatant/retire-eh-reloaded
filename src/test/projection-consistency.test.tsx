@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
-import { PeopleProvider } from '@/contexts/PeopleContext'
-import { AssumptionsProvider, useAssumptions } from '@/contexts/AssumptionsContext'
+import { PlanStoreProvider } from '@/contexts/PlanStoreContext'
+import { useAssumptions } from '@/contexts/AssumptionsContext'
 import { ProjectionProvider, buildCombinedProjection, useProjectionContext } from '@/contexts/ProjectionContext'
 import { buildGuaranteedIncomeSchedule, calculateRetirementGoal, levelizeGuaranteedIncome } from '@/lib/calculations'
 import type { ProjectionDataPoint } from '@/types/projection'
@@ -44,11 +44,9 @@ const gifts = [
 
 function wrapper({ children }: { children: React.ReactNode }) {
   return (
-    <PeopleProvider>
-      <AssumptionsProvider>
-        <ProjectionProvider>{children}</ProjectionProvider>
-      </AssumptionsProvider>
-    </PeopleProvider>
+    <PlanStoreProvider>
+      <ProjectionProvider>{children}</ProjectionProvider>
+    </PlanStoreProvider>
   )
 }
 

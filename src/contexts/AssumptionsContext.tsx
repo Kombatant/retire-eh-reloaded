@@ -1,92 +1,31 @@
-import { createContext, useContext, useState, type ReactNode } from 'react'
-import type { PlanAssumptions, PlannedGift } from '@/types/plan'
+import type { PlannedGift } from '@/types/plan'
+import { usePlanStore } from './PlanStoreContext'
+import {
+  addLegacyGift,
+  patchAssumptions,
+  removeExpenseItem,
+  setInitialWithdrawalRate,
+  setLegacyGifts,
+  setReplacementRate,
+  updateLegacyGift,
+} from '@/lib/plan/edits'
 
-interface AssumptionsContextValue extends PlanAssumptions {
-  setExpectedReturn: (v: number) => void
-  setInflationRate: (v: number) => void
-  setReplacementRate: (v: number) => void
-  setWithdrawalRate: (v: number) => void
-  setShowRealValues: (v: boolean) => void
-  setWorkingMarginalTaxRate: (v: number) => void
-  setReinvestRrspRefund: (v: boolean) => void
-  setPlannedGifts: (gifts: PlannedGift[]) => void
-  addGift: (defaultAge?: number) => void
-  updateGift: (id: string, patch: Partial<Omit<PlannedGift, 'id'>>) => void
-  removeGift: (id: string) => void
-}
-
-const AssumptionsContext = createContext<AssumptionsContextValue | null>(null)
-
-function loadNumber(key: string, fallback: number): number {
-  const saved = localStorage.getItem(key)
-  return saved !== null ? parseFloat(saved) : fallback
-}
-
-function loadBoolean(key: string, fallback: boolean): boolean {
-  const saved = localStorage.getItem(key)
-  return saved !== null ? saved === 'true' : fallback
-}
-
-function loadGifts(key: string, fallback: PlannedGift[]): PlannedGift[] {
-  const saved = localStorage.getItem(key)
-  if (saved === null) return fallback
-  try {
-    const parsed = JSON.parse(saved)
-    if (Array.isArray(parsed)) return parsed
-  } catch {
-    // ignore malformed storage
-  }
-  return fallback
-}
-
-function newId(): string {
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID()
-  return `gift_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-}
-
-export function AssumptionsProvider({ children }: { children: ReactNode }) {
-  const [expectedReturn, setExpectedReturn] = useState(() => loadNumber('expectedReturn', 7.0))
-  const [inflationRate, setInflationRate] = useState(() => loadNumber('inflationRate', 2.5))
-  const [replacementRate, setReplacementRate] = useState(() => loadNumber('replacementRate', 70))
-  const [withdrawalRate, setWithdrawalRate] = useState(() => loadNumber('withdrawalRate', 4.0))
-  const [showRealValues, setShowRealValues] = useState(() => loadBoolean('showRealValues', true))
-  const [workingMarginalTaxRate, setWorkingMarginalTaxRate] = useState(() => loadNumber('workingMarginalTaxRate', 30))
-  const [reinvestRrspRefund, setReinvestRrspRefund] = useState(() => loadBoolean('reinvestRrspRefund', false))
-  const [plannedGifts, setPlannedGifts] = useState<PlannedGift[]>(() => loadGifts('plannedGifts', []))
-
-  const setPlannedGiftsExternal = (gifts: PlannedGift[]) => setPlannedGifts(gifts)
-
-  const addGift = (defaultAge = 65) => {
-    setPlannedGifts(prev => [
-      ...prev,
-      { id: newId(), label: 'Kid gift', amount: 50000, age: defaultAge },
-    ])
-  }
-  const updateGift = (id: string, patch: Partial<Omit<PlannedGift, 'id'>>) => {
-    setPlannedGifts(prev => prev.map(g => (g.id === id ? { ...g, ...patch } : g)))
-  }
-  const removeGift = (id: string) => {
-    setPlannedGifts(prev => prev.filter(g => g.id !== id))
-  }
-
-  return (
-    <AssumptionsContext.Provider value={{
-      expectedReturn, setExpectedReturn,
-      inflationRate, setInflationRate,
-      replacementRate, setReplacementRate,
-      withdrawalRate, setWithdrawalRate,
-      showRealValues, setShowRealValues,
-      workingMarginalTaxRate, setWorkingMarginalTaxRate,
-      reinvestRrspRefund, setReinvestRrspRefund,
-      plannedGifts, setPlannedGifts: setPlannedGiftsExternal, addGift, updateGift, removeGift,
-    }}>
-      {children}
-    </AssumptionsContext.Provider>
-  )
-}
-
+// v1-shaped assumptions API over the v2 plan store.
 export function useAssumptions() {
-  const ctx = useContext(AssumptionsContext)
-  if (!ctx) throw new Error('useAssumptions must be used within AssumptionsProvider')
-  return ctx
+  const { legacyAssumptions, updateActivePlan, setUiPrefs } = usePlanStore()
+
+  return {
+    ...legacyAssumptions,
+    setExpectedReturn: (v: number) => updateActivePlan(p => patchAssumptions(p, { expectedReturn: v })),
+    setInflationRate: (v: number) => updateActivePlan(p => patchAssumptions(p, { inflationRate: v })),
+    setReplacementRate: (v: number) => updateActivePlan(p => setReplacementRate(p, v)),
+    setWithdrawalRate: (v: number) => updateActivePlan(p => setInitialWithdrawalRate(p, v)),
+    setShowRealValues: (v: boolean) => setUiPrefs({ showRealValues: v }),
+    setWorkingMarginalTaxRate: (v: number) => updateActivePlan(p => patchAssumptions(p, { workingMarginalTaxRate: v })),
+    setReinvestRrspRefund: (v: boolean) => updateActivePlan(p => patchAssumptions(p, { reinvestRrspRefund: v })),
+    setPlannedGifts: (gifts: PlannedGift[]) => updateActivePlan(p => setLegacyGifts(p, gifts)),
+    addGift: (defaultAge = 65) => updateActivePlan(p => addLegacyGift(p, defaultAge)),
+    updateGift: (id: string, patch: Partial<Omit<PlannedGift, 'id'>>) => updateActivePlan(p => updateLegacyGift(p, id, patch)),
+    removeGift: (id: string) => updateActivePlan(p => removeExpenseItem(p, id)),
+  }
 }

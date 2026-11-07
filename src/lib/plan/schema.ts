@@ -1,0 +1,322 @@
+import { z } from 'zod'
+
+// Plan data model v2: the canonical persisted and exported shape.
+//
+// Conventions:
+// - Money amounts are entered in plan-start ("today's") dollars unless a field
+//   says otherwise. The engine indexes them according to each item's growth rule.
+// - Percentages are stored as human percentages (7 means 7%).
+// - Dates are TimePoints so they can follow a person ("at Alex's retirement")
+//   instead of being frozen to a calendar year.
+// - Optional fields carry defaults so hand-edited or partial YAML still loads.
+
+export const PROVINCES = ['AB', 'BC', 'MB', 'NB', 'NL', 'NS', 'NT', 'NU', 'ON', 'PE', 'QC', 'SK', 'YT'] as const
+export const provinceSchema = z.enum(PROVINCES)
+export type ProvinceCode = z.infer<typeof provinceSchema>
+
+// Kept as the schema default for omitted provinces. Existing plans were always
+// taxed as Quebec, so that is the safest fallback until all provinces exist.
+export const SCHEMA_DEFAULT_PROVINCE: ProvinceCode = 'QC'
+
+// Maximum CPP retirement pension at age 65 (~$1,508/month in 2026).
+export const MAX_CPP_ANNUAL_2026 = 18092
+
+const id = z.string().min(1)
+const money = z.number().min(0)
+const age = z.number().int().min(0).max(120)
+const calendarYear = z.number().int().min(1900).max(2200)
+const percent = (min: number, max: number) => z.number().min(min).max(max)
+
+export const timePointSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('now') }),
+  z.object({ kind: z.literal('year'), year: calendarYear }),
+  z.object({ kind: z.literal('age'), personId: id, age }),
+  z.object({ kind: z.literal('retirement'), personId: id, offset: z.number().int().min(-60).max(60).default(0) }),
+])
+export type TimePoint = z.infer<typeof timePointSchema>
+
+// --- People -----------------------------------------------------------------
+
+const cppSchema = z.discriminatedUnion('mode', [
+  // The user enters the age-65 amount from their Service Canada statement.
+  z.object({ mode: z.literal('amount'), amountAt65: money }),
+  // Estimated from average earnings relative to the YMPE over the contributory period.
+  z.object({
+    mode: z.literal('earnings'),
+    averageEarningsRatioPct: percent(0, 100),
+    contributoryYears: z.number().int().min(0).max(50),
+  }),
+])
+
+export const personSchema = z.object({
+  id,
+  name: z.string().min(1),
+  birthYear: calendarYear,
+  province: provinceSchema.default(SCHEMA_DEFAULT_PROVINCE),
+  retirementAge: age,
+  lifeExpectancy: age.default(95),
+  cpp: cppSchema.default({ mode: 'amount', amountAt65: MAX_CPP_ANNUAL_2026 }),
+  cppStartAge: z.number().int().min(60).max(70).default(65),
+  oas: z.object({
+    startAge: z.number().int().min(65).max(70).default(65),
+    yearsInCanadaAfter18: z.number().int().min(0).max(47).default(40),
+  }).prefault({}),
+  // Unused contribution room as of the plan start. Undefined means "not tracked".
+  room: z.object({
+    rrsp: money.optional(),
+    tfsa: money.optional(),
+    fhsa: money.optional(),
+  }).optional(),
+})
+export type PersonV2 = z.infer<typeof personSchema>
+
+// --- Accounts ---------------------------------------------------------------
+
+export const ACCOUNT_TYPES = ['RRSP', 'RRIF', 'TFSA', 'FHSA', 'LIRA', 'LIF', 'NONREG', 'CASH'] as const
+export const accountTypeSchema = z.enum(ACCOUNT_TYPES)
+export type AccountType = z.infer<typeof accountTypeSchema>
+
+export const contributionSchema = z.object({
+  amount: money,
+  from: timePointSchema.optional(), // default: plan start
+  to: timePointSchema.optional(), // default: owner's retirement
+  // Indexed contributions keep pace with inflation; v1 contributions were flat nominal.
+  indexed: z.boolean().default(false),
+})
+export type ContributionRule = z.infer<typeof contributionSchema>
+
+export const allocationSchema = z.object({
+  equity: percent(0, 100),
+  bond: percent(0, 100),
+  cash: percent(0, 100),
+})
+export type Allocation = z.infer<typeof allocationSchema>
+
+const accountBase = {
+  id,
+  ownerId: id, // a person id, or 'joint'
+  label: z.string().default(''),
+  balance: money,
+  contributions: z.array(contributionSchema).default([]),
+  allocation: allocationSchema.optional(),
+  returnOverridePct: percent(-50, 50).optional(),
+}
+
+const lockedInJurisdiction = provinceSchema.or(z.literal('FED')).optional()
+
+export const accountSchema = z.discriminatedUnion('type', [
+  z.object({ ...accountBase, type: z.literal('RRSP') }),
+  z.object({ ...accountBase, type: z.literal('RRIF') }),
+  z.object({ ...accountBase, type: z.literal('TFSA') }),
+  z.object({
+    ...accountBase,
+    type: z.literal('FHSA'),
+    openedYear: calendarYear.optional(),
+    lifetimeContributed: money.default(0),
+  }),
+  z.object({ ...accountBase, type: z.literal('LIRA'), jurisdiction: lockedInJurisdiction }),
+  z.object({ ...accountBase, type: z.literal('LIF'), jurisdiction: lockedInJurisdiction }),
+  z.object({
+    ...accountBase,
+    type: z.literal('NONREG'),
+    // Adjusted cost base. Undefined means "same as balance" (no unrealized gain).
+    acb: money.optional(),
+    // Annual distributions as % of balance, taxed each year even if reinvested.
+    yields: z.object({
+      interestPct: percent(0, 20).default(0),
+      eligibleDividendPct: percent(0, 20).default(0),
+      foreignDividendPct: percent(0, 20).default(0),
+    }).optional(),
+  }),
+  z.object({ ...accountBase, type: z.literal('CASH') }),
+])
+export type AccountV2 = z.infer<typeof accountSchema>
+
+// --- Income -----------------------------------------------------------------
+
+export const INCOME_KINDS = ['employment', 'selfEmployment', 'rental', 'dbPension', 'annuity', 'windfall', 'other'] as const
+
+export const growthSchema = z.object({
+  // cpi: grows with inflation plus `pct` real; fixed: grows `pct` nominal; none: flat nominal.
+  kind: z.enum(['cpi', 'fixed', 'none']),
+  pct: percent(-20, 20).default(0),
+})
+export type GrowthRule = z.infer<typeof growthSchema>
+
+export const incomeSchema = z.object({
+  id,
+  ownerId: id,
+  label: z.string().default(''),
+  kind: z.enum(INCOME_KINDS),
+  amount: money, // annual amount in plan-start dollars (or the one-time amount)
+  frequency: z.enum(['annual', 'oneTime']).default('annual'),
+  from: timePointSchema.optional(),
+  to: timePointSchema.optional(),
+  growth: growthSchema.prefault({ kind: 'cpi' }),
+  taxTreatment: z.enum(['ordinary', 'nonTaxable', 'capitalGain', 'eligibleDividend']).default('ordinary'),
+  db: z.object({
+    indexationPctOfCpi: percent(0, 100).default(100),
+    bridge: z.object({ amount: money, untilAge: age }).optional(),
+    survivorPct: percent(0, 100).default(60),
+  }).optional(),
+})
+export type IncomeStream = z.infer<typeof incomeSchema>
+
+// --- Expenses ---------------------------------------------------------------
+
+export const expenseItemSchema = z.object({
+  id,
+  label: z.string().default(''),
+  category: z.string().default('general'),
+  amount: money,
+  frequency: z.enum(['annual', 'monthly', 'oneTime', 'everyNYears']).default('annual'),
+  everyNYears: z.number().int().min(1).max(50).optional(),
+  from: timePointSchema.optional(),
+  to: timePointSchema.optional(),
+  // Essential spending is the floor that dynamic withdrawal strategies never cut.
+  essential: z.boolean().default(true),
+  realGrowthPct: percent(-20, 20).default(0),
+})
+export type ExpenseItem = z.infer<typeof expenseItemSchema>
+
+export const expensePhaseSchema = z.object({
+  id,
+  name: z.string().default(''),
+  from: timePointSchema,
+  to: timePointSchema.optional(),
+  discretionaryMultiplierPct: percent(0, 300).default(100),
+})
+export type ExpensePhase = z.infer<typeof expensePhaseSchema>
+
+export const GIFT_CATEGORY = 'gift'
+
+export const expensesSchema = z.object({
+  // simple: retirement spending is replacementRate % of pre-retirement employment
+  // income; only one-time items (e.g. gifts) are added on top.
+  // detailed: spending is the sum of all items.
+  mode: z.enum(['simple', 'detailed']).default('simple'),
+  replacementRate: percent(0, 200).default(70),
+  phases: z.array(expensePhaseSchema).default([]),
+  items: z.array(expenseItemSchema).default([]),
+})
+export type ExpensePlan = z.infer<typeof expensesSchema>
+
+// --- Real estate & debts ----------------------------------------------------
+
+export const propertySchema = z.object({
+  id,
+  ownerId: id,
+  label: z.string().default(''),
+  value: money,
+  appreciationRealPct: percent(-20, 20).default(0),
+  isPrincipalResidence: z.boolean().default(true),
+  acb: money.optional(),
+  annualCosts: money.default(0),
+  sale: z.object({
+    at: timePointSchema,
+    sellingCostPct: percent(0, 20).default(5),
+    // Value of a replacement home bought with the proceeds (0 = rent afterwards).
+    replacementValue: money.default(0),
+  }).optional(),
+})
+export type Property = z.infer<typeof propertySchema>
+
+export const debtSchema = z.object({
+  id,
+  label: z.string().default(''),
+  kind: z.enum(['mortgage', 'loan', 'lineOfCredit', 'other']).default('loan'),
+  balance: money,
+  interestRatePct: percent(0, 40),
+  monthlyPayment: money,
+  propertyId: id.optional(),
+})
+export type Debt = z.infer<typeof debtSchema>
+
+// --- Drawdown ---------------------------------------------------------------
+
+export const spendingStrategySchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('expenses') }),
+  z.object({ kind: z.literal('initialPct'), ratePct: percent(0.01, 20) }),
+  z.object({
+    kind: z.literal('pctPortfolio'),
+    ratePct: percent(0.01, 20),
+    floorPct: percent(0, 100).optional(),
+    ceilingPct: percent(100, 300).optional(),
+  }),
+  z.object({
+    kind: z.literal('guytonKlinger'),
+    initialRatePct: percent(0.01, 20),
+    guardrailPct: percent(1, 100).default(20),
+    adjustmentPct: percent(1, 50).default(10),
+  }),
+  z.object({ kind: z.literal('vpw') }),
+])
+export type SpendingStrategy = z.infer<typeof spendingStrategySchema>
+
+export const drawdownSchema = z.object({
+  strategy: spendingStrategySchema.default({ kind: 'initialPct', ratePct: 4 }),
+  order: z.enum(['proRata', 'custom']).default('proRata'),
+  customOrder: z.array(accountTypeSchema).default(['CASH', 'NONREG', 'RRIF', 'RRSP', 'LIF', 'LIRA', 'FHSA', 'TFSA']),
+  rrifConversionAge: z.number().int().min(55).max(71).default(71),
+  rrifUseYoungerSpouseAge: z.boolean().default(false),
+  meltdown: z.object({
+    enabled: z.boolean().default(false),
+    targetTaxableIncome: money.default(57000),
+  }).prefault({}),
+  pensionSplitting: z.boolean().default(true),
+})
+export type DrawdownSettings = z.infer<typeof drawdownSchema>
+
+// --- Assumptions ------------------------------------------------------------
+
+export const assumptionsSchema = z.object({
+  expectedReturn: percent(-10, 50).default(7),
+  inflationRate: percent(0, 30).default(2.5),
+  // Marginal rate while working; used only to estimate RRSP refunds until the
+  // tax engine computes working-year tax directly.
+  workingMarginalTaxRate: percent(0, 60).default(30),
+  reinvestRrspRefund: z.boolean().default(false),
+})
+export type AssumptionsV2 = z.infer<typeof assumptionsSchema>
+
+// --- Plan -------------------------------------------------------------------
+
+export const planSchema = z.object({
+  schemaVersion: z.literal(2),
+  id,
+  name: z.string().min(1).default('My plan'),
+  // ISO date the balances were entered.
+  asOf: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  people: z.array(personSchema).min(1),
+  accounts: z.array(accountSchema).default([]),
+  incomes: z.array(incomeSchema).default([]),
+  expenses: expensesSchema.prefault({}),
+  properties: z.array(propertySchema).default([]),
+  debts: z.array(debtSchema).default([]),
+  drawdown: drawdownSchema.prefault({}),
+  assumptions: assumptionsSchema.prefault({}),
+}).superRefine((plan, ctx) => {
+  const personIds = new Set(plan.people.map(p => p.id))
+  if (personIds.size !== plan.people.length) {
+    ctx.addIssue({ code: 'custom', path: ['people'], message: 'Person ids must be unique' })
+  }
+  const owners: [string, { ownerId: string }[]][] = [
+    ['accounts', plan.accounts],
+    ['incomes', plan.incomes],
+    ['properties', plan.properties],
+  ]
+  for (const [key, items] of owners) {
+    items.forEach((item, i) => {
+      if (item.ownerId !== 'joint' && !personIds.has(item.ownerId)) {
+        ctx.addIssue({ code: 'custom', path: [key, i, 'ownerId'], message: `Unknown owner "${item.ownerId}"` })
+      }
+    })
+  }
+})
+export type PlanV2 = z.infer<typeof planSchema>
+export type PlanV2Input = z.input<typeof planSchema>
+
+export const uiPrefsSchema = z.object({
+  showRealValues: z.boolean().default(true),
+})
+export type UiPrefs = z.infer<typeof uiPrefsSchema>

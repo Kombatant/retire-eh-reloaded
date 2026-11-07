@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { renderHook } from '@testing-library/react'
-import { PeopleProvider } from '@/contexts/PeopleContext'
-import { AssumptionsProvider } from '@/contexts/AssumptionsContext'
+import { PlanStoreProvider } from '@/contexts/PlanStoreContext'
 import { ProjectionProvider, useProjectionContext } from '@/contexts/ProjectionContext'
 import { OAS_MAX_ANNUAL_2026 } from '@/lib/tax'
 
@@ -24,11 +23,9 @@ const expectedOas = OAS_MAX_ANNUAL_2026 * 1.36
 
 function wrapper({ children }: { children: React.ReactNode }) {
   return (
-    <PeopleProvider>
-      <AssumptionsProvider>
-        <ProjectionProvider>{children}</ProjectionProvider>
-      </AssumptionsProvider>
-    </PeopleProvider>
+    <PlanStoreProvider>
+      <ProjectionProvider>{children}</ProjectionProvider>
+    </PlanStoreProvider>
   )
 }
 

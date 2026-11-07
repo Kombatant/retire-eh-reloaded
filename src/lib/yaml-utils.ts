@@ -1,51 +1,31 @@
 import yaml from 'js-yaml'
-import type { Person } from '@/types/household'
-import type { PlanAssumptions, RetirementPlan } from '@/types/household'
-import { validateYamlImport } from '@/lib/validation'
+import type { PlanV2, UiPrefs } from '@/lib/plan/schema'
+import { parsePlanData } from '@/lib/plan/migrate'
 
-export type { PlanAssumptions, RetirementPlan } from '@/types/household'
-
-export function buildRetirementPlan(
-  assumptions: PlanAssumptions,
-  people: Person[]
-): RetirementPlan {
-  return {
-    version: '1.0',
-    assumptions,
-    people: people.map(p => ({
-      id: p.id,
-      name: p.name,
-      currentAge: p.currentAge,
-      retirementAge: p.retirementAge,
-      annualIncome: p.annualIncome,
-      annualPension: p.annualPension,
-      annualCpp: p.annualCpp,
-      cppStartAge: p.cppStartAge ?? 65,
-      oasStartAge: p.oasStartAge ?? 65,
-      accounts: p.accounts
-    }))
-  }
+export interface ImportedPlan {
+  plan: PlanV2
+  // Display preferences carried by v1 files (they used to live in the plan).
+  uiPrefs: Partial<UiPrefs>
+  migratedFrom: 1 | null
 }
 
-export function exportToYAML(
-  assumptions: PlanAssumptions,
-  people: Person[]
-): string {
-  return yaml.dump(buildRetirementPlan(assumptions, people), { indent: 2 })
+export function exportToYAML(plan: PlanV2): string {
+  return yaml.dump(plan, { indent: 2, noRefs: true })
 }
 
-export function importFromYAML(yamlString: string): RetirementPlan | null {
+// Accepts any supported schema version; older files are migrated to v2.
+export function importFromYAML(yamlString: string, now: Date = new Date()): ImportedPlan | null {
   try {
     const parsed = yaml.load(yamlString)
     if (!parsed || typeof parsed !== 'object') {
       return null
     }
-    const result = validateYamlImport(parsed)
+    const result = parsePlanData(parsed, { now })
     if (!result.success) {
-      console.error('YAML validation failed:', result.errors)
+      console.error('Plan validation failed:', result.errors)
       return null
     }
-    return result.data as RetirementPlan
+    return { plan: result.plan, uiPrefs: result.uiPrefs, migratedFrom: result.migratedFrom }
   } catch (error) {
     console.error('Failed to parse YAML:', error)
     return null
@@ -64,7 +44,7 @@ export function downloadYAML(content: string, filename: string = 'retirement-pla
   URL.revokeObjectURL(url)
 }
 
-export async function uploadYAML(): Promise<RetirementPlan | null> {
+export async function uploadYAML(): Promise<ImportedPlan | null> {
   return new Promise((resolve) => {
     const input = document.createElement('input')
     input.type = 'file'
@@ -81,8 +61,7 @@ export async function uploadYAML(): Promise<RetirementPlan | null> {
       reader.onload = (event) => {
         const content = event.target?.result as string
         if (content) {
-          const plan = importFromYAML(content)
-          resolve(plan)
+          resolve(importFromYAML(content))
         } else {
           resolve(null)
         }

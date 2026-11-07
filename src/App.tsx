@@ -1,13 +1,12 @@
 import { useState, useCallback } from 'react'
 import './App.css'
 import { useDarkMode } from '@/hooks/useDarkMode'
-import { PeopleProvider, usePeople } from '@/contexts/PeopleContext'
-import { AssumptionsProvider, useAssumptions } from '@/contexts/AssumptionsContext'
+import { PlanStoreProvider, usePlanStore } from '@/contexts/PlanStoreContext'
+import { useAssumptions } from '@/contexts/AssumptionsContext'
 import { ProjectionProvider } from '@/contexts/ProjectionContext'
 import { usePersistence } from '@/hooks/usePersistence'
-import { buildRetirementPlan, exportToYAML, downloadYAML, uploadYAML } from '@/lib/yaml-utils'
+import { exportToYAML, downloadYAML, uploadYAML, type ImportedPlan } from '@/lib/yaml-utils'
 import { buildShareUrl, clearShareHash, readSharePlanFromUrl } from '@/lib/share-link'
-import type { RetirementPlan } from '@/types/plan'
 import { Header } from '@/components/Header'
 import { Footer } from '@/components/Footer'
 import { Tabs } from '@/components/Tabs'
@@ -22,49 +21,29 @@ type TabId = 'overview' | 'plan' | 'projections' | 'learn'
 function AppContent() {
   const [activeTab, setActiveTab] = useState<TabId>('plan')
   const [isDarkMode, setIsDarkMode] = useDarkMode()
-  const peopleApi = usePeople()
+  const store = usePlanStore()
   const assumptions = useAssumptions()
   const { localStorageError, setLocalStorageError } = usePersistence()
-  const [pendingSharedPlan, setPendingSharedPlan] = useState<RetirementPlan | null>(() =>
+  const [pendingSharedPlan, setPendingSharedPlan] = useState<ImportedPlan | null>(() =>
     readSharePlanFromUrl(window.location.href)
   )
   const [shareNotice, setShareNotice] = useState<string | null>(null)
+  const { activePlan, replaceActivePlan, setUiPrefs, setSelectedPersonId } = store
 
-  const currentAssumptions = useCallback(() => ({
-    expectedReturn: assumptions.expectedReturn,
-    inflationRate: assumptions.inflationRate,
-    replacementRate: assumptions.replacementRate,
-    withdrawalRate: assumptions.withdrawalRate,
-    showRealValues: assumptions.showRealValues,
-    plannedGifts: assumptions.plannedGifts,
-    workingMarginalTaxRate: assumptions.workingMarginalTaxRate,
-    reinvestRrspRefund: assumptions.reinvestRrspRefund,
-  }), [assumptions])
-
-  const applyPlan = useCallback((plan: RetirementPlan) => {
-    assumptions.setExpectedReturn(plan.assumptions.expectedReturn)
-    assumptions.setInflationRate(plan.assumptions.inflationRate)
-    assumptions.setReplacementRate(plan.assumptions.replacementRate)
-    assumptions.setWithdrawalRate(plan.assumptions.withdrawalRate)
-    assumptions.setShowRealValues(plan.assumptions.showRealValues)
-    assumptions.setWorkingMarginalTaxRate(plan.assumptions.workingMarginalTaxRate ?? 30)
-    assumptions.setReinvestRrspRefund(plan.assumptions.reinvestRrspRefund ?? false)
-    assumptions.setPlannedGifts(plan.assumptions.plannedGifts ?? [])
-    peopleApi.setPeople(plan.people)
-    if (plan.people.length > 0) {
-      peopleApi.setSelectedPersonId(plan.people[0].id)
-    }
-  }, [assumptions, peopleApi])
+  const applyPlan = useCallback((imported: ImportedPlan) => {
+    replaceActivePlan(imported.plan)
+    if (Object.keys(imported.uiPrefs).length > 0) setUiPrefs(imported.uiPrefs)
+    setSelectedPersonId(imported.plan.people[0]?.id ?? null)
+  }, [replaceActivePlan, setUiPrefs, setSelectedPersonId])
 
   const handleExport = useCallback(() => {
-    const yamlContent = exportToYAML(currentAssumptions(), peopleApi.people)
+    const yamlContent = exportToYAML(activePlan)
     const date = new Date().toISOString().split('T')[0]
     downloadYAML(yamlContent, `retirement-plan-${date}.yaml`)
-  }, [currentAssumptions, peopleApi.people])
+  }, [activePlan])
 
   const handleShare = useCallback(async () => {
-    const plan = buildRetirementPlan(currentAssumptions(), peopleApi.people)
-    const link = buildShareUrl(plan)
+    const link = buildShareUrl(activePlan)
     try {
       if (navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(link)
@@ -75,7 +54,7 @@ function AppContent() {
     } catch {
       window.prompt('Copy this share link:', link)
     }
-  }, [currentAssumptions, peopleApi.people])
+  }, [activePlan])
 
   const handleImport = useCallback(async () => {
     const plan = await uploadYAML()
@@ -127,7 +106,7 @@ function AppContent() {
             <div>
               <div className="font-semibold">You've opened a shared retirement plan</div>
               <p className="mt-0.5 text-indigo-700 dark:text-indigo-300">
-                {pendingSharedPlan.people.map(p => p.name).join(' & ')} · Load it to explore the numbers.
+                {pendingSharedPlan.plan.people.map(p => p.name).join(' & ')} · Load it to explore the numbers.
                 This will replace the plan currently saved in this browser.
               </p>
             </div>
@@ -187,12 +166,10 @@ function AppContent() {
 
 export default function App() {
   return (
-    <PeopleProvider>
-      <AssumptionsProvider>
-        <ProjectionProvider>
-          <AppContent />
-        </ProjectionProvider>
-      </AssumptionsProvider>
-    </PeopleProvider>
+    <PlanStoreProvider>
+      <ProjectionProvider>
+        <AppContent />
+      </ProjectionProvider>
+    </PlanStoreProvider>
   )
 }

@@ -1,6 +1,6 @@
 import { deflateSync, inflateSync, strFromU8, strToU8 } from 'fflate'
-import { exportToYAML, importFromYAML } from './yaml-utils'
-import type { RetirementPlan } from '@/types/plan'
+import { exportToYAML, importFromYAML, type ImportedPlan } from './yaml-utils'
+import type { PlanV2 } from '@/lib/plan/schema'
 
 const SHARE_PARAM = 'plan'
 
@@ -27,12 +27,13 @@ function base64UrlToBytes(value: string): Uint8Array {
   return bytes
 }
 
-export function encodePlan(plan: RetirementPlan): string {
-  const yaml = exportToYAML(plan.assumptions, plan.people)
+export function encodePlan(plan: PlanV2): string {
+  const yaml = exportToYAML(plan)
   return bytesToBase64Url(deflateSync(strToU8(yaml), { level: 9 }))
 }
 
-export function decodePlan(encoded: string): RetirementPlan | null {
+// Links created before v2 carry v1 YAML; importFromYAML migrates them.
+export function decodePlan(encoded: string): ImportedPlan | null {
   try {
     const yaml = strFromU8(inflateSync(base64UrlToBytes(encoded)))
     return importFromYAML(yaml)
@@ -41,13 +42,13 @@ export function decodePlan(encoded: string): RetirementPlan | null {
   }
 }
 
-export function buildShareUrl(plan: RetirementPlan, baseUrl: string = window.location.href): string {
+export function buildShareUrl(plan: PlanV2, baseUrl: string = window.location.href): string {
   const url = new URL(baseUrl)
   url.hash = `${SHARE_PARAM}=${encodePlan(plan)}`
   return url.toString()
 }
 
-export function readSharePlanFromUrl(href: string): RetirementPlan | null {
+export function readSharePlanFromUrl(href: string): ImportedPlan | null {
   try {
     const url = new URL(href)
     const hash = url.hash.startsWith('#') ? url.hash.slice(1) : url.hash

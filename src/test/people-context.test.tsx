@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
-import { PeopleProvider, usePeople } from '@/contexts/PeopleContext'
+import { usePeople } from '@/contexts/PeopleContext'
+import { PlanStoreProvider } from '@/contexts/PlanStoreContext'
 
 function wrapper({ children }: { children: React.ReactNode }) {
-  return <PeopleProvider>{children}</PeopleProvider>
+  return <PlanStoreProvider>{children}</PlanStoreProvider>
 }
 
 describe('PeopleContext', () => {
@@ -187,11 +188,12 @@ describe('PeopleContext', () => {
       result.current.setSelectedPersonId('import-1')
     })
 
-    expect(result.current.people).toEqual(newPeople)
+    // v1 people without CPP fields read back with the v1 defaults filled in.
+    expect(result.current.people).toEqual([{ ...newPeople[0], annualCpp: 0, cppStartAge: 65, oasStartAge: 65 }])
     expect(result.current.selectedPersonId).toBe('import-1')
   })
 
   it('throws when usePeople is used outside provider', () => {
-    expect(() => renderHook(() => usePeople())).toThrow('usePeople must be used within PeopleProvider')
+    expect(() => renderHook(() => usePeople())).toThrow('usePlanStore must be used within PlanStoreProvider')
   })
 })
