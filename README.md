@@ -1,7 +1,5 @@
 # Retire, Eh? 🍁
 
-[![CI](https://github.com/halfguru/retire-eh/actions/workflows/ci.yml/badge.svg)](https://github.com/halfguru/retire-eh/actions/workflows/ci.yml)
-[![Deploy](https://github.com/halfguru/retire-eh/actions/workflows/deploy.yml/badge.svg)](https://github.com/halfguru/retire-eh/actions/workflows/deploy.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 > Plan your Canadian retirement, eh?
@@ -9,8 +7,6 @@
 A household-first retirement planner for Canadians. Build an RRSP, TFSA, and CPP strategy with conservative projections and transparent math. Everything runs locally in your browser.
 
 ![Screenshot](public/screenshot.png)
-
-**[Live Demo](https://halfguru.github.io/retire-eh/)**
 
 ## Features
 

@@ -46,6 +46,6 @@ jobs:
             
             Download `retire-eh-${{ github.ref_name }}.zip` and extract it to any static file server.
             
-            ### Live Demo
-            
-            Try it at: https://halfguru.github.io/retire-eh/
+            ### Docker
+
+            `ghcr.io/kombatant/retire-eh-reloaded` (tag `latest`, or this version without the leading `v`). See `docker-compose.yml`.

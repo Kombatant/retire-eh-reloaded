@@ -39,10 +39,10 @@ The application is 100% pure TypeScript (React + Vite). All calculations run cli
 - Runs on push/PR to `main` and `develop` branches
 - Checks: Type check, lint, vitest tests, production build
 
-### Deploy Pipeline (`.github/workflows/deploy.yml`)
-- Runs on push to `main` branch
-- Builds frontend production bundle
-- Deploys to GitHub Pages: https://halfguru.github.io/retire-eh/
+### Docker Image (`.github/workflows/docker.yml`)
+- Runs on push to `main` and on version tags
+- Builds the `Dockerfile` (Node build, nginx serving `docker/nginx.conf`) and pushes `ghcr.io/kombatant/retire-eh-reloaded` (`latest`, semver, short SHA)
+- Self-hosted with `docker-compose.yml` (e.g. on Unraid). There is no GitHub Pages deployment.
 
 ### Release Pipeline (`.github/workflows/release.yml`)
 - Runs on version tags (`v*`, e.g., `v1.0.0`)

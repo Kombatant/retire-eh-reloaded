@@ -15,11 +15,8 @@ function getGitSha(): string {
   }
 }
 
-const baseUrl = process.env.GITHUB_PAGES ? '/retire-eh/' : '/'
-
 export default defineConfig({
   plugins: [react(), tailwindcss()],
-  base: baseUrl,
   resolve: {
     alias: {
       '@': path.resolve(import.meta.dirname, './src'),
@@ -27,7 +24,6 @@ export default defineConfig({
   },
   define: {
     __APP_VERSION__: JSON.stringify(getGitSha()),
-    __BASE_URL__: JSON.stringify(baseUrl),
   },
   test: {
     environment: 'jsdom',
