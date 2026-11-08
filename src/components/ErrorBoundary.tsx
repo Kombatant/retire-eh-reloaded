@@ -38,17 +38,16 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       }
 
       return (
-        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-6 text-center">
-          <div className="mb-3"><AlertTriangle className="w-10 h-10 text-error" /></div>
-          <h2 className="text-lg font-semibold text-red-700 dark:text-red-300 mb-2">
-            Something went wrong
-          </h2>
-          <p className="text-sm text-red-600 dark:text-red-400 mb-4">
+        <div role="alert" className="rounded-xl border border-danger/30 bg-danger-subtle p-6 text-center">
+          <AlertTriangle className="mx-auto mb-3 h-8 w-8 text-danger" aria-hidden />
+          <h2 className="mb-1 text-base font-semibold text-fg">Something went wrong</h2>
+          <p className="mb-4 text-sm text-fg-secondary">
             {this.state.error?.message || 'An unexpected error occurred.'}
           </p>
           <button
+            type="button"
             onClick={this.handleReset}
-            className="px-4 py-2 bg-red-100 dark:bg-red-800 text-red-700 dark:text-red-200 rounded-md hover:bg-red-200 dark:hover:bg-red-700 transition-colors text-sm font-medium"
+            className="h-9 rounded-md border border-border-strong bg-surface px-4 text-sm font-medium text-fg hover:bg-surface-muted"
           >
             Try again
           </button>

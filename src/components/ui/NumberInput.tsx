@@ -1,17 +1,23 @@
 import { useState, useMemo } from 'react'
 import { formatCurrency } from '@/lib/formatting'
+import { cn } from '@/lib/ui/cn'
+import { controlBase, controlSize } from '@/lib/ui/styles'
+import { useFieldId } from './fieldContext'
 
 interface NumberInputProps {
   value: number
   onChange: (val: number) => void
-  step?: number
   min?: number
   max?: number
   size?: 'default' | 'compact'
   ariaLabel?: string
+  id?: string
+  className?: string
 }
 
-export function NumberInput({ value, onChange, step, min, max, size = 'default', ariaLabel }: NumberInputProps) {
+// Dollar amount input: formatted with separators at rest, plain while editing.
+export function NumberInput({ value, onChange, min, max, size = 'default', ariaLabel, id, className }: NumberInputProps) {
+  const fieldId = useFieldId(id)
   const [focused, setFocused] = useState(false)
 
   const displayValue = useMemo(() => {
@@ -20,33 +26,28 @@ export function NumberInput({ value, onChange, step, min, max, size = 'default',
   }, [value, focused])
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const raw = e.target.value.replace(/,/g, '')
+    const raw = e.target.value.replace(/[,$\s]/g, '')
     const num = parseFloat(raw) || 0
     if ((min === undefined || num >= min) && (max === undefined || num <= max)) onChange(num)
   }
 
-  const isCompact = size === 'compact'
-
   return (
-    <div className="relative">
+    <div className={cn('relative min-w-0', className)}>
+      <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-fg-muted">$</span>
       <input
+        id={fieldId}
         type="text"
-        step={step}
+        inputMode="decimal"
         value={displayValue}
+        placeholder="0"
         onChange={handleChange}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
         autoComplete="off"
         data-lpignore="true"
         aria-label={ariaLabel}
-        className={`number-input w-full bg-white dark:bg-slate-800 text-gray-900 dark:text-white rounded border border-gray-300 dark:border-gray-600 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 ${
-          isCompact ? 'px-2 py-1 pr-6 text-sm' : 'px-2.5 py-1.5 pr-7 text-sm'
-        }`}
-        style={{ caretColor: '#1f2937' }}
+        className={cn(controlBase, size === 'compact' ? controlSize.sm : controlSize.md, 'pl-6 text-right')}
       />
-      <span className={`absolute top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 text-xs ${
-        isCompact ? 'right-2' : 'right-2.5'
-      }`}>$</span>
     </div>
   )
 }

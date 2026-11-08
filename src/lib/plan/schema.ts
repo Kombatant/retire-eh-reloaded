@@ -449,5 +449,7 @@ export type PlanV2Input = z.input<typeof planSchema>
 
 export const uiPrefsSchema = z.object({
   showRealValues: z.boolean().default(true),
+  // Essentials hides rarely needed inputs and views; hidden values still apply.
+  detailLevel: z.enum(['essentials', 'advanced']).default('essentials'),
 })
 export type UiPrefs = z.infer<typeof uiPrefsSchema>

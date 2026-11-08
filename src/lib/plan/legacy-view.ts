@@ -81,7 +81,7 @@ export function toLegacyGifts(plan: PlanV2, nowYear: number): PlannedGift[] {
     }))
 }
 
-export function toLegacyAssumptions(plan: PlanV2, uiPrefs: UiPrefs, nowYear: number): PlanAssumptions {
+export function toLegacyAssumptions(plan: PlanV2, uiPrefs: Pick<UiPrefs, 'showRealValues'>, nowYear: number): PlanAssumptions {
   const strategy = plan.drawdown.strategy
   return {
     expectedReturn: plan.assumptions.expectedReturn,

@@ -170,7 +170,7 @@ describe('plan storage', () => {
     storage.setItem('people', JSON.stringify(v1.people))
     const a = createDefaultPlan(NOW, 'A')
     const b = migrateV1ToV2(v1, { now: NOW, id: 'b', name: 'B' }).plan
-    storage.setItem(STORE_KEY, serializeStore({ activePlanId: 'b', plans: [a, b], uiPrefs: { showRealValues: false }, snapshots: [], baselines: [] })!)
+    storage.setItem(STORE_KEY, serializeStore({ activePlanId: 'b', plans: [a, b], uiPrefs: { showRealValues: false, detailLevel: 'essentials' }, snapshots: [], baselines: [] })!)
 
     const state = loadStore(storage, NOW)
     expect(state.plans).toEqual([a, b])
@@ -192,7 +192,7 @@ describe('plan storage', () => {
   it('skips writing while a plan is mid-edit and invalid', () => {
     const plan = createDefaultPlan(NOW)
     const editing = updateLegacyPersonField(plan, plan.people[0].id, 'currentAge', NaN, YEAR)
-    expect(serializeStore({ activePlanId: plan.id, plans: [editing], uiPrefs: { showRealValues: true }, snapshots: [], baselines: [] })).toBeNull()
+    expect(serializeStore({ activePlanId: plan.id, plans: [editing], uiPrefs: { showRealValues: true, detailLevel: 'essentials' }, snapshots: [], baselines: [] })).toBeNull()
   })
 })
 

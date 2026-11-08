@@ -58,64 +58,67 @@ The application is 100% pure TypeScript (React + Vite). All calculations run cli
 
 ## UI Architecture
 
-### Tab Navigation
+### Navigation
 
-The app uses a horizontal tab layout with 8 sections:
+A grouped sidebar (a drawer on small screens) with hash routes. Each page shows one thing at a time; pages with several views use `SubTabs`, and the selected view is kept in the URL.
 
-| Tab | Purpose | Default |
-|-----|---------|---------|
-| Plan | Inputs: people, accounts, income, spending, real estate & debts, drawdown, assumptions | Yes |
-| Overview | Summary, portfolio, income breakdown, goal progress, tax detail, milestones, estate | No |
-| Projections | Growth charts, contribution split, retirement drawdown, benefit timing | No |
-| Cash Flow | Yearly Sankey, tax by year, bracket room, year-by-year table with CSV export | No |
-| Risk | Monte Carlo fan chart and success rate, historical backtest, stress tests | No |
-| Compare | 2–3 saved plans side by side | No |
-| Tracking | Dated balance snapshots, actual vs. projected, rebaseline | No |
-| Learn | Educational content about methodology | No |
+| Group | Page | Route | Contents |
+|-------|------|-------|----------|
+| — | Plan | `#/plan/<section>` | Inputs, one section at a time: household, savings, income, spending, property, withdrawals, assumptions. A live results rail sits beside them (a bottom bar on small screens). Default page. |
+| Results | Dashboard | `#/dashboard` | Status and goal progress, 4 KPIs, lifetime savings chart, income sources, milestones, plan summary |
+| | Projections | `#/projections/<growth\|drawdown\|benefits\|stocks>` | Saving years, retirement years and estate, CPP/OAS timing, stock scenarios (Advanced) |
+| | Cash flow | `#/cashflow/<flow\|table>` | Yearly Sankey, year-by-year table with column presets and CSV export |
+| | Taxes | `#/taxes/<retirement\|by-year\|brackets>` | Tax at retirement, tax by year, bracket room |
+| | Risk | `#/risk/<monte-carlo\|historical\|stress>` | Success KPIs; fan chart, historical backtest, stress tests |
+| Tools | Compare | `#/compare` | 2–3 saved plans side by side |
+| | Tracking | `#/tracking` | Dated balance snapshots, actual vs. projected, rebaseline |
+| — | Learn | `#/learn/<topic>` | Methodology articles |
 
-The header has a plan switcher: new, duplicate, rename and delete.
+Share links also use the hash (`#plan=…`). Route hashes always start with `#/`, so `parseRoute` ignores share hashes (`src/lib/ui/route.ts`).
 
-### Component Structure
+The top bar has the plan menu (switch, new, duplicate, rename, delete), the Today's $ / Future $ switch, Share and a ⋯ menu (export/import YAML). The sidebar footer has the Advanced mode switch, the theme control (light/dark/system) and the version.
+
+### Essentials / Advanced
+
+`uiPrefs.detailLevel` (default `essentials`) hides rarely needed inputs and views. Wrap them in `<Advanced>` or use `useDetailLevel()`. Hiding never changes a value. When a hidden setting differs from its default, `advancedSettingsInUse` (`src/lib/plan/advanced.ts`) reports it and the Plan section shows a notice. Add new advanced inputs to that function.
+
+### Code structure
 
 ```
-App.tsx (provider shell)
-├── PlanStoreProvider
-│   └── ProjectionProvider
-│       └── AppContent
-│           ├── Header.tsx (logo, PlanSwitcher, export/import/share, dollars toggle, dark mode)
-│           ├── Tabs.tsx
-│           ├── Tab content (one active at a time, inside an ErrorBoundary)
-│           │   ├── PlanTab.tsx
-│           │   │   ├── PersonSelector / PersonForm
-│           │   │   │   ├── PersonDetails (province, horizon, OAS residency, CPP, room)
-│           │   │   │   └── AccountsSection (all account types)
-│           │   │   ├── IncomePanel, AssumptionsPanel, SpendingPanel
-│           │   │   └── RealEstatePanel, DrawdownPanel
-│           │   ├── OverviewTab.tsx (Summary, Portfolio, Goals, RetirementTaxTable, MilestonesCard, EstateCard, …)
-│           │   ├── ProjectionsTab.tsx (Growth, ContributionGrowth, Drawdown, RetirementCashFlowTable, BenefitTiming)
-│           │   ├── CashFlowTab.tsx, RiskTab.tsx, CompareTab.tsx, TrackingTab.tsx
-│           │   └── LearnTab.tsx
-│           └── Footer.tsx
+src/components/ui/       building blocks: Button, Card, PageHeader, Field + inputs, Checkbox/Switch,
+                         SegmentedControl, SubTabs, Sheet (native <dialog>), ListRow, AddMenu, Stat,
+                         Badge/MoneyModeBadge, Callout, EmptyState, Disclosure, ChartLegend, Floating
+src/components/layout/   TopBar, Sidebar, PlanMenu, navItems
+src/views/<page>/        plan/ (PlanView, LiveRail, sections/), dashboard/, projections/, cashflow/,
+                         taxes/, risk/, compare/, tracking/, learn/
+src/lib/ui/              cn, styles (shared class strings), chartTheme, route, money
 ```
+
+Provider order in `App.tsx`: ThemeProvider › ToastProvider › RouteProvider › PlanStoreProvider › ProjectionProvider › AppContent. Each page renders inside its own ErrorBoundary.
+
+### Styling
+
+- Colours are CSS variables in `src/index.css`, set for `:root` and `.dark` and exposed as Tailwind colours: `bg-bg`, `bg-surface`, `bg-surface-muted`, `border-border`, `text-fg`, `text-fg-secondary`, `text-fg-muted`, `accent`, `success`, `warning`, `danger`. Don't use raw Tailwind palette classes or `dark:` pairs.
+- Charts take colours from `src/lib/ui/chartTheme.ts` (CSS variables, so they follow the theme). Each colour has one meaning across the app (RRSP, TFSA, CPP, tax…). The categorical order was checked for colour-blind safety; keep it.
+- Status colours are always paired with an icon or words.
+- Every money view shows a `MoneyModeBadge`. Views that ignore the dollars switch say so (`fixedReal` / `fixedNominal`).
 
 ### State Management
 
 - The plan data model is versioned (`src/lib/plan/schema.ts`, zod, `schemaVersion: 2`). It is the single source of truth for persistence, YAML export and share links.
 - Every external plan source (YAML, share links, stored plans) goes through `parsePlanData` in `src/lib/plan/migrate.ts`. Older v1 files are migrated forward there.
-- `PlanStoreProvider` (`src/contexts/PlanStoreContext.tsx`) owns all saved plans, the active plan id, UI preferences and person selection, via `useReducer`.
+- `PlanStoreProvider` (`src/contexts/PlanStoreContext.tsx`) owns all saved plans, the active plan id, UI preferences (`showRealValues`, `detailLevel`) and person selection, via `useReducer`.
   - It persists everything under one localStorage key, `retireEh.v2`.
   - On first load it migrates the original loose keys.
-- `usePeople` and `useAssumptions` are compatibility hooks. They present v1-shaped data (`src/lib/plan/legacy-view.ts`) and map edits onto pure v2 transforms (`src/lib/plan/edits.ts`).
-- New UI should use `usePlanStore()` directly.
-- `ProjectionProvider` derives projection data from the active plan.
-- `App.tsx` is a thin layout shell that nests providers.
-- Active tab state lives in `AppContent`.
+- New UI uses `usePlanStore()` and the pure transforms in `src/lib/plan/edits.ts`. `usePeople` and `useAssumptions` are v1-shaped compatibility hooks.
+- `ProjectionProvider` derives projection data from the active plan. `usePlanOutlook()` gives the live rail and Dashboard the same goal, income and "money lasts" figures (`src/lib/insights/outlook.ts`).
+- The current page lives in the URL hash (`RouteProvider`, `useRoute`, `useSubView`).
+- The theme lives in `ThemeProvider` (localStorage `retireEh.theme`; it reads the old `darkMode` key once). It is kept out of the plan and share links.
 
-### Mobile Responsiveness
+### Mobile
 
-- Tabs scroll horizontally on mobile
-- Tab bar is sticky at top
-- Touch-friendly hit areas (min 44px height)
+- The sidebar becomes a drawer; Plan sections become a scrolling chip row; the live rail becomes a bottom summary bar.
+- Touch targets are at least 40–44px. Wide tables scroll inside their card.
 
 ## Testing
 
@@ -125,10 +128,11 @@ App.tsx (provider shell)
 - `tax-provinces`: hand-computed golden tax values, every jurisdiction, payroll, splitting, OAS/GIS/CPP.
 - `sim-v2`, `sim-accounts`, `sim-spending`, `sim-drawdown`: engine behaviour (tax ownership, refunds, account types, room, income streams, budgets, real estate, RRIF/LIF, strategies, survivors, estate).
 - `sim-risk`, `rng`: Monte Carlo, backtest, crash scenarios.
-- `insights`: Sankey, CSV, FI metrics, milestones, comparison, brackets.
+- `insights`, `outlook`: Sankey, CSV, FI metrics, milestones, comparison, brackets; goal outlook, income sources, money-lasts.
 - `cpp-history`: CPP/QPP estimate from work history.
 - `sim-stocks`, `stock-quotes`: stock holdings, RSU/ESPP, sell plans, scenarios, quote providers (mocked fetch).
-- `projection-consistency`, `narrative`, `app-smoke` (renders every tab).
+- `route`, `advanced-settings`, `ui-primitives`: hash routes, Essentials/Advanced detection, Sheet/SegmentedControl/SubTabs/NumberInput/Field.
+- `projection-consistency`, `narrative`, `app-smoke`: every page and Plan section renders; deep links; Advanced mode; theme; shared-plan flow.
 
 ### Shared Utilities
 - `src/lib/sim/` - Unified year-by-year simulation engine (`steps/`: debts, solver, RRIF/LIF, spending strategies)
@@ -148,6 +152,6 @@ App.tsx (provider shell)
 - Stock portfolio accounts (`type: 'STOCK'`): holdings with vested shares, unvested RSU tranches, ESPP, a bear/base/bull price projection, and a sell plan.
   - Vesting and the ESPP benefit are taxed as employment income.
   - `src/lib/insights/stockScenarios.ts` compares the three cases with and without the sell plan.
-- `src/lib/formatting.ts` - `formatMoney()`, `formatCompactMoney()` for all currency display
+- `src/lib/formatting.ts` - `money()` / `moneyCompact()` (with `$`) and `formatMoney()` / `formatCompactMoney()` (digits only) for all currency display
 - `src/hooks/useRetirementGoal.ts` - Shared goal calculation hook
 - `src/lib/validation.ts` - Zod schemas for YAML import and form validation

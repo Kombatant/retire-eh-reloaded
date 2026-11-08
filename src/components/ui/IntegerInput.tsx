@@ -1,15 +1,22 @@
 import { useState } from 'react'
+import { cn } from '@/lib/ui/cn'
+import { controlBase, controlSize, type ControlSize } from '@/lib/ui/styles'
+import { useFieldId } from './fieldContext'
 
 interface IntegerInputProps {
   value: number
   onChange: (val: number) => void
   min?: number
   max?: number
+  // Replaces the default control styling when given (older call sites).
   className?: string
+  size?: ControlSize
   ariaLabel?: string
+  id?: string
 }
 
-export function IntegerInput({ value, onChange, min, max, className, ariaLabel }: IntegerInputProps) {
+export function IntegerInput({ value, onChange, min, max, className, size = 'md', ariaLabel, id }: IntegerInputProps) {
+  const fieldId = useFieldId(id)
   const [draft, setDraft] = useState<string | null>(null)
   const [focused, setFocused] = useState(false)
 
@@ -50,7 +57,8 @@ export function IntegerInput({ value, onChange, min, max, className, ariaLabel }
       onBlur={handleBlur}
       aria-label={ariaLabel}
       autoComplete="off"
-      className={className}
+      id={fieldId}
+      className={className ?? cn(controlBase, controlSize[size])}
     />
   )
 }

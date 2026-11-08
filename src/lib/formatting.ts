@@ -12,6 +12,18 @@ export function formatCompactMoney(value: number): string {
   return `${value.toFixed(0)}`
 }
 
+// "$1,234" / "−$1,234". Use for display; formatMoney stays digits-only.
+export function money(value: number): string {
+  const sign = value < 0 ? '−' : ''
+  return `${sign}$${formatMoney(Math.abs(value))}`
+}
+
+// "$1.2M" / "$350k" / "$900", for tight spaces such as KPI tiles and axes.
+export function moneyCompact(value: number): string {
+  const sign = value < 0 ? '−' : ''
+  return `${sign}$${formatCompactMoney(Math.abs(value))}`
+}
+
 export function formatCurrency(value: number | string): string {
   const num = typeof value === 'string' ? parseFloat(value.replace(/,/g, '')) || 0 : value
   return num.toLocaleString('en-CA')

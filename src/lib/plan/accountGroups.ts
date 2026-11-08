@@ -43,3 +43,9 @@ export function groupBalances(accounts: Pick<AccountV2, 'type' | 'balance'>[]): 
   for (const a of accounts) totals[accountGroup(a.type)] += a.balance || 0
   return totals
 }
+
+// What an account is worth today. Stock accounts hold shares, not a balance.
+export function accountValue(account: AccountV2): number {
+  if (account.type === 'STOCK') return account.holdings.reduce((s, h) => s + h.shares * h.price, 0)
+  return account.balance || 0
+}

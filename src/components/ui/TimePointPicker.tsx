@@ -1,3 +1,5 @@
+import { controlBase, controlSize } from '@/lib/ui/styles'
+import { Select } from './inputs'
 import type { TimePoint } from '@/lib/plan/schema'
 
 interface TimePointPickerProps {
@@ -11,7 +13,7 @@ interface TimePointPickerProps {
   ariaLabel?: string
 }
 
-const fieldClass = 'px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20'
+const fieldClass = `${controlBase} ${controlSize.md}`
 
 type Kind = 'unset' | TimePoint['kind']
 
@@ -34,11 +36,11 @@ export function TimePointPicker({ value, onChange, personId, unsetLabel, current
   }
 
   return (
-    <div className="flex gap-1.5">
-      <select
+    <div className="flex gap-2">
+      <Select
         value={kind}
         onChange={(e) => changeKind(e.target.value as Kind)}
-        className={`${fieldClass} flex-1 min-w-0`}
+        className="flex-1"
         aria-label={ariaLabel}
       >
         {unsetLabel && <option value="unset">{unsetLabel}</option>}
@@ -46,13 +48,13 @@ export function TimePointPicker({ value, onChange, personId, unsetLabel, current
         <option value="retirement">At retirement</option>
         <option value="age">At age</option>
         <option value="year">In year</option>
-      </select>
+      </Select>
       {value?.kind === 'retirement' && (
         <input
           type="number"
           value={value.offset ?? 0}
           onChange={(e) => onChange({ ...value, offset: number(e.target.value, 0) })}
-          className={`${fieldClass} w-20`}
+          className={`${fieldClass} w-20 shrink-0`}
           aria-label="Years after retirement"
           title="Years after (+) or before (−) retirement"
         />
@@ -64,7 +66,7 @@ export function TimePointPicker({ value, onChange, personId, unsetLabel, current
           min={0}
           max={120}
           onChange={(e) => onChange({ ...value, age: number(e.target.value, value.age) })}
-          className={`${fieldClass} w-20`}
+          className={`${fieldClass} w-20 shrink-0`}
           aria-label="Age"
         />
       )}
@@ -75,7 +77,7 @@ export function TimePointPicker({ value, onChange, personId, unsetLabel, current
           min={1900}
           max={2200}
           onChange={(e) => onChange({ ...value, year: number(e.target.value, value.year) })}
-          className={`${fieldClass} w-24`}
+          className={`${fieldClass} w-24 shrink-0`}
           aria-label="Year"
         />
       )}

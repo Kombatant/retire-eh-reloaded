@@ -1,22 +1,32 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react'
+import { Check } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import { useAnchoredPosition } from './useAnchoredPosition'
+import { usePortalContainer } from './portalContext'
 
-// Menus and tooltips are rendered into document.body with fixed positioning.
-// Cards use backdrop-filter (and a hover transform), which makes each card
-// its own stacking context: anything absolutely positioned inside a card,
-// whatever its z-index, is painted under the next card. A portal escapes that.
+// Menus and tooltips are rendered with fixed positioning in a portal, so no
+// card's overflow or stacking context can clip them. Inside a modal sheet the
+// portal targets the sheet's <dialog> instead, because a modal dialog makes
+// the rest of the page inert.
 
 export function FloatingPortal({ children }: { children: ReactNode }) {
+  const container = usePortalContainer()
   if (typeof document === 'undefined') return null
-  return createPortal(children, document.body)
+  return createPortal(children, container ?? document.body)
 }
 
 export interface MenuItem {
   key: string
-  label: string
+  label: ReactNode
   title?: string
   onSelect: () => void
+  icon?: ComponentType<{ className?: string; 'aria-hidden'?: boolean }>
+  // Shows a check mark (for "pick one" lists such as the plan switcher).
+  checked?: boolean
+  tone?: 'danger'
+  disabled?: boolean
+  // Draws a divider above this item.
+  separator?: boolean
 }
 
 // A button that opens a list of actions (e.g. "+ Add income").
@@ -24,17 +34,22 @@ export function DropdownMenu({
   label,
   items,
   buttonClassName,
+  buttonLabel,
   menuClassName = 'w-56',
+  align = 'end',
 }: {
   label: ReactNode
   items: MenuItem[]
   buttonClassName?: string
+  // Accessible name, for triggers that only show an icon.
+  buttonLabel?: string
   menuClassName?: string
+  align?: 'start' | 'end'
 }) {
   const [open, setOpen] = useState(false)
   const buttonRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
-  const position = useAnchoredPosition(open, buttonRef, menuRef, { prefer: 'below', align: 'end' })
+  const position = useAnchoredPosition(open, buttonRef, menuRef, { prefer: 'below', align })
 
   useEffect(() => {
     if (!open) return
@@ -66,13 +81,13 @@ export function DropdownMenu({
 
   // Move focus into the menu for keyboard users.
   useEffect(() => {
-    if (open && position) menuRef.current?.querySelector<HTMLButtonElement>('button')?.focus()
+    if (open && position) menuRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus()
   }, [open, position])
 
   const onMenuKey = (event: React.KeyboardEvent) => {
     if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
     event.preventDefault()
-    const buttons = [...(menuRef.current?.querySelectorAll<HTMLButtonElement>('button') ?? [])]
+    const buttons = [...(menuRef.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [])]
     const index = buttons.indexOf(document.activeElement as HTMLButtonElement)
     const next = (index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length
     buttons[next]?.focus()
@@ -85,6 +100,8 @@ export function DropdownMenu({
         type="button"
         onClick={() => setOpen(o => !o)}
         className={buttonClassName}
+        aria-label={buttonLabel}
+        title={buttonLabel}
         aria-haspopup="menu"
         aria-expanded={open}
       >
@@ -103,23 +120,34 @@ export function DropdownMenu({
               maxHeight: position?.maxHeight,
               visibility: position ? 'visible' : 'hidden',
             }}
-            className={`z-[1000] overflow-y-auto py-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg ${menuClassName}`}
+            className={`z-[1000] overflow-y-auto p-1 bg-surface border border-border rounded-lg shadow-lg ${menuClassName}`}
           >
-            {items.map(item => (
-              <button
-                key={item.key}
-                type="button"
-                role="menuitem"
-                title={item.title}
-                onClick={() => {
-                  setOpen(false)
-                  item.onSelect()
-                }}
-                className="w-full px-3 py-2 text-left text-xs text-gray-700 dark:text-gray-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 focus:bg-indigo-50 dark:focus:bg-indigo-900/30 focus:outline-none"
-              >
-                {item.label}
-              </button>
-            ))}
+            {items.map(item => {
+              const Icon = item.icon
+              return (
+                <Fragment key={item.key}>
+                  {item.separator && <div role="separator" className="my-1 h-px bg-border" />}
+                  <button
+                    type="button"
+                    role={item.checked === undefined ? 'menuitem' : 'menuitemradio'}
+                    aria-checked={item.checked}
+                    title={item.title}
+                    disabled={item.disabled}
+                    onClick={() => {
+                      setOpen(false)
+                      item.onSelect()
+                    }}
+                    className={`flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-[13px] hover:bg-surface-muted focus:bg-surface-muted focus:outline-none disabled:opacity-40 disabled:pointer-events-none ${item.tone === 'danger' ? 'text-danger' : 'text-fg'}`}
+                  >
+                    {item.checked !== undefined && (
+                      <Check className={`h-3.5 w-3.5 shrink-0 ${item.checked ? 'text-accent' : 'invisible'}`} aria-hidden />
+                    )}
+                    {Icon && <Icon className="h-3.5 w-3.5 shrink-0 text-fg-muted" aria-hidden />}
+                    <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                  </button>
+                </Fragment>
+              )
+            })}
           </div>
         </FloatingPortal>
       )}
@@ -174,7 +202,7 @@ export function Tooltip({
               left: position?.left ?? -9999,
               visibility: position ? 'visible' : 'hidden',
             }}
-            className={`z-[1000] block max-w-[calc(100vw-16px)] px-3 py-2 text-sm font-normal normal-case tracking-normal text-left text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg pointer-events-none ${className}`}
+            className={`z-[1000] block max-w-[calc(100vw-16px)] px-3 py-2 text-[13px] leading-relaxed font-normal normal-case tracking-normal text-left text-fg-secondary bg-surface border border-border rounded-lg shadow-lg pointer-events-none ${className}`}
           >
             {content}
           </span>
