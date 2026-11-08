@@ -6,6 +6,8 @@ import path from 'path'
 import { execSync } from 'child_process'
 
 function getGitSha(): string {
+  // Docker builds have no .git directory, so the version comes in as a build arg.
+  if (process.env.APP_VERSION) return process.env.APP_VERSION
   try {
     return execSync('git rev-parse --short HEAD').toString().trim()
   } catch {

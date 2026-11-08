@@ -1,0 +1,19 @@
+# For Unraid Compose Manager (or any `docker compose up -d`).
+# Plans are kept in the browser's localStorage, not in the container, so no volume is needed.
+services:
+  retire-eh:
+    image: ghcr.io/kombatant/retire-eh-reloaded:latest
+    # To build on the NAS from source instead of pulling, comment out `image` and use:
+    # build: https://github.com/Kombatant/retire-eh-reloaded.git#main
+    container_name: retire-eh-reloaded
+    ports:
+      - "8890:80"
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx
+      - /var/run
+      - /tmp
+    labels:
+      net.unraid.docker.webui: "http://[IP]:[PORT:8890]/"
+      net.unraid.docker.icon: "https://raw.githubusercontent.com/Kombatant/retire-eh-reloaded/main/public/favicon.svg"
