@@ -36,7 +36,12 @@ function vestYear(grant: RsuGrant, nowYear: number): string {
 }
 
 // Unvested shares as one or more vesting tranches.
-function VestingSchedule({ holding, onChange, personId }: { holding: Holding; onChange: (grants: RsuGrant[]) => void; personId: string }) {
+function VestingSchedule({ holding, onChange, onSellToCover, personId }: {
+  holding: Holding
+  onChange: (grants: RsuGrant[]) => void
+  onSellToCover: (on: boolean) => void
+  personId: string
+}) {
   const { nowYear } = usePlanStore()
   const [years, setYears] = useState(4)
   const total = holding.rsuGrants.reduce((s, g) => s + g.shares, 0)
@@ -54,6 +59,15 @@ function VestingSchedule({ holding, onChange, personId }: { holding: Holding; on
       <div className="text-[11px] text-fg-muted">
         Each tranche is taxed as employment income at the share price on its vesting date, then joins your vested shares with that value as its cost.
       </div>
+      <label className="flex items-start gap-2 text-xs text-fg-secondary">
+        <input type="checkbox" className="mt-0.5" checked={holding.sellToCover} onChange={(e) => onSellToCover(e.target.checked)} />
+        <span>
+          Sell to cover: shares are sold at vesting to pay the tax on them
+          <span className="block text-[11px] text-fg-muted">
+            You keep fewer shares instead of paying from your pocket. The tax still counts as income tax for that year. Turn off if you keep every share and pay the tax in cash.
+          </span>
+        </span>
+      </label>
       {holding.rsuGrants.map(g => (
         <div key={g.id} className="grid grid-cols-[6rem_1fr_auto] gap-2 items-center">
           {numberField(g.shares, v => onChange(holding.rsuGrants.map(x => (x.id === g.id ? { ...x, shares: Math.max(0, v) } : x))), { min: 0, label: 'Shares vesting' })}
@@ -175,7 +189,7 @@ function HoldingRow({ account, holding }: { account: StockAccount; holding: Hold
       </div>
 
       {showVesting && unvested > 0 && (
-        <VestingSchedule holding={holding} onChange={(rsuGrants) => update({ rsuGrants })} personId={account.ownerId} />
+        <VestingSchedule holding={holding} onChange={(rsuGrants) => update({ rsuGrants })} onSellToCover={(sellToCover) => update({ sellToCover })} personId={account.ownerId} />
       )}
 
       {open && (

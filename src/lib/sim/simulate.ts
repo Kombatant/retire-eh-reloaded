@@ -343,6 +343,7 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
       unvestedValue: 0,
       stockSales: 0,
       stockCompensation: 0,
+      stockTaxWithheld: 0,
       guaranteedIncome: 0,
       grossIncome: 0,
       afterTaxIncome: 0,
@@ -479,6 +480,7 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
     // employment income paid in shares, and becomes the cost base. Unvested
     // grants and ESPP stop if the employee has died.
     let esppCash = 0
+    const sellToCover: { a: number; holding: number; employee: number; value: number }[] = []
     for (const a of stockAccounts) {
       const employee = c.accounts[a].ownerIndex
       const employed = v2 && employee >= 0 && alive[employee]
@@ -491,6 +493,7 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
           if (g.offset === t) {
             added += g.shares * price
             benefit += g.shares * price
+            if (h.sellToCover && v2) sellToCover.push({ a, holding: h.index, employee, value: g.shares * price })
           } else if (g.offset > t) {
             row.unvestedValue += g.shares * price
           }
@@ -641,7 +644,7 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
       const tax = householdTax(inputs).total * k
       const gis = sum(gisFor(inputs)) * k
       return guaranteedBeforeGis() + gis + row.otherIncome + sum(planned.taken) +
-        peopleYear.reduce((s, p) => s + p.employment, 0) - tax - payrollTotal()
+        peopleYear.reduce((s, p) => s + p.employment, 0) - tax - payrollTotal() + withheld
     }
 
     // Reinvest cash that was withdrawn but not needed (forced minimums,
@@ -653,6 +656,34 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
       if (target < 0) return
       deposit(target, amount)
       row.reinvested += amount
+    }
+
+    // Sell to cover: part of the shares vesting this year is sold at once to
+    // pay the income tax and payroll deductions they add. Those are the shares
+    // just received (cost = price), so the sale has no capital gain. The tax
+    // still counts in the year's tax; it is paid by the shares, not from cash.
+    let withheld = 0
+    if (sellToCover.length > 0) {
+      const payroll = (h: HouseholdTaxResult) => h.perPerson.reduce((s, r) => s + r.payroll.total, 0)
+      const full = householdTax(taxInputs(zeros(), zeros()))
+      for (const employee of new Set(sellToCover.map(v => v.employee))) {
+        const m = aliveIdx.indexOf(employee)
+        if (m < 0) continue
+        const vests = sellToCover.filter(v => v.employee === employee)
+        const value = sum(vests.map(v => v.value))
+        const inputs = taxInputs(zeros(), zeros())
+        inputs[m] = { ...inputs[m], employment: inputs[m].employment - value / k }
+        const without = householdTax(inputs)
+        const due = Math.min(value, Math.max(0, (full.total + payroll(full) - without.total - payroll(without)) * k))
+        for (const v of vests) {
+          const sold = due * (v.value / value)
+          holdingValue[v.holding] -= sold
+          balances[v.a] -= sold
+          acb[v.a] -= sold
+        }
+        withheld += due
+      }
+      row.stockTaxWithheld = withheld
     }
 
     const contributedTo = { rrsp: zeros(), tfsa: zeros() }
@@ -703,7 +734,7 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
         if (detailed) {
           // Working-year cash flow: earnings, benefits and withdrawals, less
           // tax, payroll, contributions and spending.
-          const inflow = peopleYear.reduce((s, p) => s + p.employment + p.pension + p.cpp + p.oas, 0) + row.otherIncome + row.withdrawal
+          const inflow = peopleYear.reduce((s, p) => s + p.employment + p.pension + p.cpp + p.oas, 0) + row.otherIncome + row.withdrawal + withheld
           const cashWithoutExtra = inflow - row.tax - payrollTotal() - sum(contributions) - esppCash - row.spending
           row.surplus = cashWithoutExtra
           if (cashWithoutExtra >= 0) {
@@ -748,7 +779,7 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
       row.guaranteedIncome = peopleYear.reduce((s, p) => s + p.pension + p.cpp + p.oas + p.gis, 0)
       const employment = peopleYear.reduce((s, p) => s + p.employment, 0)
       row.grossIncome = row.guaranteedIncome + row.otherIncome + employment + row.withdrawal - row.reinvested
-      row.afterTaxIncome = Math.max(0, row.grossIncome - row.tax - payrollTotal())
+      row.afterTaxIncome = Math.max(0, row.grossIncome - row.tax - payrollTotal() + withheld)
     } else {
       // The first-year withdrawal is set from the whole portfolio, before
       // any reserved one-time pot comes out (as in the original engine).
@@ -906,7 +937,7 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
 
       row.guaranteedIncome = peopleYear.reduce((s, p) => s + p.pension + p.cpp + p.oas + p.gis, 0)
       row.grossIncome = row.guaranteedIncome + row.otherIncome + withdrawal - row.reinvested
-      row.afterTaxIncome = Math.max(0, row.guaranteedIncome + row.otherIncome + withdrawal - row.tax - payrollTotal() - row.reinvested)
+      row.afterTaxIncome = Math.max(0, row.guaranteedIncome + row.otherIncome + withdrawal - row.tax - payrollTotal() - row.reinvested + withheld)
       if (detailed) {
         row.surplus = row.afterTaxIncome - row.spending
         if (row.surplus > 1 && solvedExactly) reinvest(row.surplus, aliveIdx[0])

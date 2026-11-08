@@ -56,6 +56,8 @@ export interface CompiledHolding {
   dividendEligible: boolean
   volatility: number // fraction
   grants: { offset: number; shares: number }[]
+  // Shares are sold at vesting to pay the tax on them (sell to cover).
+  sellToCover: boolean
   espp: { flow: CompiledFlow; discount: number; match: number } | null
 }
 
@@ -268,6 +270,9 @@ export interface YearRow {
   unvestedValue: number // unvested RSUs at this year's price (not in net worth)
   stockSales: number
   stockCompensation: number
+  // Vested RSU shares sold at once to pay their own tax (sell to cover).
+  // Included in `tax`; this part is paid by the shares, not from cash.
+  stockTaxWithheld: number
   // Pension, CPP, OAS and GIS.
   guaranteedIncome: number
   grossIncome: number

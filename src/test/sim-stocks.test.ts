@@ -58,16 +58,35 @@ describe('stock holdings', () => {
 describe('RSUs and ESPP', () => {
   it('vests RSUs as employment income at the projected price', () => {
     const grant = { id: 'g', shares: 2000, vestAt: { kind: 'year' as const, year: YEAR + 2 } }
-    const p = plan({ holdings: [holding({ rsuGrants: [grant] })] }, {}, 40, 65)
+    const p = plan({ holdings: [holding({ rsuGrants: [grant], sellToCover: false })] }, {}, 40, 65)
     const rows = simulatePlan(p, flat).result.rows
     const price2 = 50 * 1.1 * 1.1
     expect(rows[0].unvestedValue).toBeCloseTo(2000 * 50, 6)
     expect(rows[2].stockCompensation).toBeCloseTo(2000 * price2, 6)
     expect(rows[2].people[0].stockCompensation).toBeCloseTo(2000 * price2, 6)
     expect(rows[2].tax).toBeGreaterThan(rows[1].tax + 20000)
+    expect(rows[2].stockTaxWithheld).toBe(0)
     expect(rows[3].unvestedValue).toBe(0)
     // Vested shares join the holding and grow with it.
     expect(rows[2].stockValue).toBeCloseTo((100 * price2 + 2000 * price2) * 1.1, 4)
+  })
+
+  it('sells vesting shares to cover their tax by default', () => {
+    const grant = { id: 'g', shares: 2000, vestAt: { kind: 'year' as const, year: YEAR + 2 } }
+    const salary = { incomes: [{ id: 'job', ownerId: 'a', kind: 'employment' as const, amount: 150000 }] }
+    const keep = simulatePlan(plan({ holdings: [holding({ rsuGrants: [grant], sellToCover: false })] }, salary, 40, 65), flat).result.rows
+    const cover = simulatePlan(plan({ holdings: [holding({ rsuGrants: [grant] })] }, salary, 40, 65), flat).result.rows
+    const vestValue = 2000 * 50 * 1.1 * 1.1
+    // Same income tax either way: the vest is employment income.
+    expect(cover[2].tax).toBeCloseTo(keep[2].tax, 6)
+    // The tax and payroll the vest adds (mostly Ontario's top rate) are paid in shares.
+    const vestTax = (keep[2].tax + keep[2].people[0].payroll) - (keep[1].tax + keep[1].people[0].payroll)
+    expect(cover[2].stockTaxWithheld).toBeCloseTo(vestTax, 0)
+    expect(cover[2].stockTaxWithheld / vestValue).toBeGreaterThan(0.45)
+    expect(cover[2].stockTaxWithheld / vestValue).toBeLessThan(0.54)
+    // Fewer shares are kept, and after-tax income is not cut by the vest's tax.
+    expect(cover[2].stockValue).toBeCloseTo(keep[2].stockValue - cover[2].stockTaxWithheld * 1.1, 4)
+    expect(cover[2].afterTaxIncome).toBeCloseTo(cover[1].afterTaxIncome, 0)
   })
 
   it('buys ESPP shares at a discount and taxes the benefit', () => {

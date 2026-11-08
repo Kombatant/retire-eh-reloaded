@@ -396,7 +396,7 @@ export function setUsdCad(plan: PlanV2, rate: number, asOf?: string): PlanV2 {
 export function newHolding(id: string = newId('holding')): Holding {
   return {
     id, symbol: '', shares: 100, priceUsd: 50, dividendYieldPct: 0, dividendType: 'eligible',
-    growthPct: { bear: 0, base: 5, bull: 10 }, volatilityPct: 30, rsuGrants: [],
+    growthPct: { bear: 0, base: 5, bull: 10 }, volatilityPct: 30, rsuGrants: [], sellToCover: true,
   }
 }
 

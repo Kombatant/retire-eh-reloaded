@@ -142,6 +142,7 @@ export function compilePlan(plan: PlanV2, { startYear, rules = 'v2' }: CompileOp
       dividendEligible: h.dividendType === 'eligible',
       volatility: h.volatilityPct / 100,
       grants: h.rsuGrants.map(g => ({ offset: offsetOf(g.vestAt, 0), shares: g.shares })).filter(g => g.offset >= 0 && g.shares > 0),
+      sellToCover: h.sellToCover,
       espp: h.espp && h.espp.annualContribution > 0
         ? {
             flow: growthFlow(

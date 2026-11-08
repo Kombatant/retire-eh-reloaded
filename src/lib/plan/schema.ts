@@ -168,6 +168,9 @@ export const holdingSchema = z.object({
   // Annual standard deviation for Monte Carlo; single stocks are volatile.
   volatilityPct: percent(0, 150).default(30),
   rsuGrants: z.array(rsuGrantSchema).default([]),
+  // At vesting, the employer sells enough of the new shares to pay their tax
+  // (sell to cover). Off: all shares are kept and the tax is paid in cash.
+  sellToCover: z.boolean().default(true),
   espp: esppSchema.optional(),
   // Last market quote used to set `priceUsd`.
   lastQuote: z.object({
