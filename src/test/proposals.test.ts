@@ -89,7 +89,9 @@ describe('applyChanges', () => {
   })
 })
 
-describe('runProposalJob', () => {
+// Each job runs many Monte Carlo simulations, which takes several times longer
+// on CI runners than on a desktop.
+describe('runProposalJob', { timeout: 120_000 }, () => {
   it('finishes with a score for the current plan', async () => {
     const update = await job(plan(72_000))
     expect(update.done).toBe(true)
@@ -108,7 +110,7 @@ describe('runProposalJob', () => {
       expect(again.base.successRate).toBeCloseTo(proposal.score.successRate!, 10)
       expect(again.base.afterTaxEstate).toBeCloseTo(proposal.score.afterTaxEstate, 2)
     }
-  }, 60_000)
+  })
 
   it('offers trade-offs when success is below target, stopping at the smallest that works', async () => {
     const update = await job(plan(100_000))
@@ -124,7 +126,7 @@ describe('runProposalJob', () => {
       }
     }
     expect(update.proposals.some(x => x.group === 'spare')).toBe(false)
-  }, 30_000)
+  })
 
   it('shows room to spare instead of trade-offs for a comfortable plan', async () => {
     const update = await job(plan(50_000))
