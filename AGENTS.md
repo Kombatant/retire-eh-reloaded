@@ -84,7 +84,7 @@ A grouped sidebar (a drawer on small screens) with hash routes. Each page shows 
 
 Share links also use the hash (`#plan=…`). Route hashes always start with `#/`, so `parseRoute` ignores share hashes (`src/lib/ui/route.ts`).
 
-The top bar has the plan menu (switch, new, duplicate, rename, delete), the Today's $ / Future $ switch, Share and a ⋯ menu (export/import YAML). The sidebar footer has the Advanced mode switch, the theme control (light/dark/system) and the version.
+The top bar has the plan menu (switch, new, duplicate, rename, delete), the Today's $ / Future $ switch, Share and a ⋯ menu (export/import YAML; an import asks whether to add a new plan or replace the open one, and asks for a name only if it would clash). The sidebar footer has the Advanced mode switch, the theme control (light/dark/system) and the version.
 
 ### Essentials / Advanced
 
@@ -134,7 +134,7 @@ Provider order in `App.tsx`: ThemeProvider › ToastProvider › RouteProvider �
 ## Testing
 
 ### Frontend tests (`npm test`)
-- `plan-migration`, `plan-store`, `people-context`, `yaml-utils`, `share-link`, `validation`: data model, v1 → v2 migration, storage, import/export.
+- `plan-migration`, `plan-store`, `plan-import`, `people-context`, `yaml-utils`, `share-link`, `validation`: data model, v1 → v2 migration, storage, import/export.
 - `sim-parity`: the unified engine with v1 rules matches the original engine within $1. `engine`, `retirement-cash-flow`, `tax`, `cpp`, `oas*` cover the original modules.
 - `tax-provinces`: hand-computed golden tax values, every jurisdiction, payroll, splitting, OAS/GIS/CPP.
 - `sim-v2`, `sim-accounts`, `sim-spending`, `sim-drawdown`: engine behaviour (tax ownership, refunds, account types, room, income streams, budgets, real estate, RRIF/LIF, strategies, survivors, estate).

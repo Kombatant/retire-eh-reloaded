@@ -11,8 +11,10 @@ import { useAutoRefreshQuotes } from '@/hooks/useStockQuotes'
 import { exportToYAML, downloadYAML, uploadYAML, type ImportedPlan } from '@/lib/yaml-utils'
 import { buildShareUrl, clearShareHash, readSharePlanFromUrl } from '@/lib/share-link'
 import { diagnosePlan } from '@/lib/plan/diagnostics'
+import { newId } from '@/lib/plan/ids'
 import type { ViewId } from '@/lib/ui/route'
 import { TopBar } from '@/components/layout/TopBar'
+import { ImportPlanSheet, type ImportMode } from '@/components/layout/ImportPlanSheet'
 import { Sidebar, SidebarContent } from '@/components/layout/Sidebar'
 import { Sheet } from '@/components/ui/Sheet'
 import { Callout } from '@/components/ui/Callout'
@@ -53,7 +55,8 @@ function AppContent() {
   const [pendingSharedPlan, setPendingSharedPlan] = useState<ImportedPlan | null>(() =>
     readSharePlanFromUrl(window.location.href)
   )
-  const { activePlan, replaceActivePlan, setUiPrefs, setSelectedPersonId, saveProblem, recoveryEntries, acknowledgeRecoveryEntries, now } = store
+  const [pendingImport, setPendingImport] = useState<ImportedPlan | null>(null)
+  const { plans, activePlan, addPlan, replaceActivePlan, setUiPrefs, setSelectedPersonId, saveProblem, recoveryEntries, acknowledgeRecoveryEntries, now } = store
   const diagnostics = useMemo(() => diagnosePlan(activePlan, now), [activePlan, now])
 
   const downloadRecovery = useCallback(() => {
@@ -66,11 +69,14 @@ function AppContent() {
     URL.revokeObjectURL(url)
   }, [recoveryEntries])
 
-  const applyPlan = useCallback((imported: ImportedPlan) => {
-    replaceActivePlan(imported.plan)
+  const applyPlan = useCallback((imported: ImportedPlan, mode: ImportMode) => {
+    // A file keeps the id of the plan it was exported from, which may still be
+    // in the list, so a plan added from one always gets a new id.
+    if (mode === 'new') addPlan({ ...imported.plan, id: newId('plan') })
+    else replaceActivePlan(imported.plan)
     if (Object.keys(imported.uiPrefs).length > 0) setUiPrefs(imported.uiPrefs)
     setSelectedPersonId(imported.plan.people[0]?.id ?? null)
-  }, [replaceActivePlan, setUiPrefs, setSelectedPersonId])
+  }, [addPlan, replaceActivePlan, setUiPrefs, setSelectedPersonId])
 
   const handleExport = useCallback(() => {
     const yamlContent = exportToYAML(activePlan)
@@ -94,14 +100,19 @@ function AppContent() {
 
   const handleImport = useCallback(async () => {
     const imported = await uploadYAML()
-    if (!imported) return
-    applyPlan(imported)
-    notify(`Imported "${imported.plan.name}".`)
-  }, [applyPlan, notify])
+    if (imported) setPendingImport(imported)
+  }, [])
+
+  const handleConfirmImport = useCallback((mode: ImportMode, name: string) => {
+    if (!pendingImport) return
+    applyPlan({ ...pendingImport, plan: { ...pendingImport.plan, name } }, mode)
+    setPendingImport(null)
+    notify(`Imported "${name}".`)
+  }, [applyPlan, pendingImport, notify])
 
   const handleLoadSharedPlan = useCallback(() => {
     if (!pendingSharedPlan) return
-    applyPlan(pendingSharedPlan)
+    applyPlan(pendingSharedPlan, 'replace')
     clearShareHash()
     setPendingSharedPlan(null)
     navigate({ view: 'dashboard' }, { replace: true })
@@ -195,6 +206,13 @@ function AppContent() {
           <SidebarContent onNavigate={() => setNavOpen(false)} />
         </div>
       </Sheet>
+      <ImportPlanSheet
+        imported={pendingImport}
+        plans={plans}
+        activePlan={activePlan}
+        onCancel={() => setPendingImport(null)}
+        onConfirm={handleConfirmImport}
+      />
     </div>
   )
 }

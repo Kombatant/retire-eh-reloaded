@@ -41,8 +41,8 @@ function storeReducer(state: StoreState, action: StoreAction): StoreState {
     case 'UPDATE_PLAN':
       return { ...state, plans: state.plans.map(p => (p.id === action.id ? action.update(p) : p)) }
     case 'REPLACE_ACTIVE':
-      // Imported plans take over the active slot but keep its identity, so the
-      // plan list does not silently grow on every import.
+      // A replacement takes over the active slot but keeps its identity, so
+      // tracking data tied to that plan stays attached to it.
       return {
         ...state,
         plans: state.plans.map(p => (p.id === state.activePlanId ? { ...action.plan, id: p.id } : p)),
