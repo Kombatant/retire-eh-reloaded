@@ -30,7 +30,7 @@ The application is 100% pure TypeScript (React + Vite). All calculations run cli
   - The Risk tab runs them in a Web Worker (`src/workers/sim.worker.ts`) through `useRiskAnalysis`.
   - Results stream in batches and are cached by plan.
   - In tests, where jsdom has no Worker, a small sample runs synchronously instead.
-- **Insights** (`src/lib/insights/`): Sankey data, CSV export, FI and Coast FI, milestones, plan comparison and tax-bracket position. Each is a pure, tested helper.
+- **Insights** (`src/lib/insights/`): Sankey data, CSV export, FI and Coast FI, milestones, plan comparison, tax-bracket position and the per-year account breakdown (balances and withdrawals by account category, `accountBreakdown.ts`). Each is a pure, tested helper.
 - **Original engine** (`src/lib/legacy/`): kept only as the reference for `src/test/sim-parity.test.ts`.
 
 ## GitHub Actions
@@ -66,7 +66,7 @@ A grouped sidebar (a drawer on small screens) with hash routes. Each page shows 
 |-------|------|-------|----------|
 | — | Plan | `#/plan/<section>` | Inputs, one section at a time: household, savings, income, spending, property, withdrawals, assumptions. A live results rail sits beside them (a bottom bar on small screens). Default page. |
 | Results | Dashboard | `#/dashboard` | Status and goal progress, 4 KPIs, lifetime savings chart, income sources, milestones, plan summary |
-| | Projections | `#/projections/<growth\|drawdown\|benefits\|stocks>` | Saving years, retirement years and estate, CPP/OAS timing, stock scenarios (Advanced) |
+| | Projections | `#/projections/<growth\|drawdown\|benefits\|stocks>` | Saving years (savings by account), retirement years (where the money comes from each year, savings by account, withdrawal rates, estate), CPP/OAS timing, stock scenarios (Advanced) |
 | | Cash flow | `#/cashflow/<flow\|table>` | Yearly Sankey, year-by-year table with column presets and CSV export |
 | | Taxes | `#/taxes/<retirement\|by-year\|brackets>` | Tax at retirement, tax by year, bracket room |
 | | Risk | `#/risk/<monte-carlo\|historical\|stress>` | Success KPIs; fan chart, historical backtest, stress tests |

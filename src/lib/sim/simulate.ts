@@ -319,6 +319,7 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
       contributions: 0,
       oneTimeExpenses: 0,
       withdrawal: 0,
+      withdrawalsByAccount: new Array(accountCount).fill(0),
       taxableWithdrawal: 0,
       taxFreeWithdrawal: 0,
       shortfall: 0,
@@ -457,6 +458,7 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
     const recordWithdrawal = (plan: PlannedWithdrawal) => {
       const total = sum(plan.taken)
       row.withdrawal += total
+      plan.taken.forEach((v, i) => { row.withdrawalsByAccount[i] += v })
       row.taxableWithdrawal += c.accounts.reduce((s, a, i) => s + (a.taxable ? plan.taken[i] : 0), 0)
       row.taxFreeWithdrawal = row.withdrawal - row.taxableWithdrawal
       plan.registered.forEach((v, i) => { peopleYear[i].registeredWithdrawals += v })

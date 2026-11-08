@@ -9,6 +9,7 @@ import { buildMilestones } from '@/lib/insights/milestones'
 import { comparePlans } from '@/lib/insights/compare'
 import { bracketPosition } from '@/lib/insights/brackets'
 import { createDefaultPlan } from '@/lib/plan/defaults'
+import { accountCategory, buildAccountBreakdown, categoriesInUse } from '@/lib/insights/accountBreakdown'
 
 const YEAR = 2026
 
@@ -131,5 +132,53 @@ describe('tax bracket position', () => {
     expect(on.room).toBe(3891)
     const qc = bracketPosition(60000, 'QC')
     expect(qc.marginalRatePct).toBeCloseTo(20.5 * 0.835 + 19, 6)
+  })
+})
+
+describe('account breakdown', () => {
+  const mixed = () => plan({
+    accounts: [
+      { id: 'r', ownerId: 'a', type: 'RRSP', balance: 300000 },
+      { id: 'f', ownerId: 'a', type: 'RRIF', balance: 50000 },
+      { id: 't', ownerId: 'a', type: 'TFSA', balance: 100000 },
+      { id: 'c', ownerId: 'a', type: 'CASH', balance: 20000 },
+      { id: 'l', ownerId: 'a', type: 'LIRA', balance: 40000 },
+      { id: 's', ownerId: 'a', type: 'STOCK', balance: 0, holdings: [{ id: 'h', symbol: 'ACME', shares: 1000, priceUsd: 50 }] },
+    ],
+  })
+
+  it('maps every account type to one category, RRSP and RRIF together', () => {
+    expect(accountCategory('RRSP')).toBe('rrsp')
+    expect(accountCategory('RRIF')).toBe('rrsp')
+    expect(accountCategory('LIF')).toBe('lockedIn')
+    expect(accountCategory('STOCK')).toBe('stock')
+    expect(accountCategory('CASH')).toBe('cash')
+  })
+
+  it('splits balances and withdrawals by category without losing any money', () => {
+    const { compiled, result } = simulatePlan(mixed(), { startYear: YEAR })
+    const rows = buildAccountBreakdown(compiled, result, false)
+    expect(rows).toHaveLength(result.rows.length)
+    rows.forEach((r, i) => {
+      const row = result.rows[i]
+      const balances = Object.values(r.balances).reduce((s, v) => s + v, 0)
+      const withdrawals = Object.values(r.withdrawals).reduce((s, v) => s + v, 0)
+      expect(balances).toBeCloseTo(row.balancesStart.reduce((s, b) => s + b, 0), 4)
+      expect(withdrawals).toBeCloseTo(row.withdrawal, 4)
+      expect(row.withdrawalsByAccount.reduce((s, v) => s + v, 0)).toBeCloseTo(row.withdrawal, 4)
+    })
+    // Non-registered appears too: unneeded RRIF minimums are reinvested in one.
+    expect(categoriesInUse(rows, 'balances')).toEqual(['rrsp', 'stock', 'tfsa', 'nonreg', 'lockedIn', 'cash'])
+    // Retirement is funded from several accounts.
+    expect(categoriesInUse(rows.filter(r => r.phase === 'drawdown'), 'withdrawals').length).toBeGreaterThan(1)
+  })
+
+  it("shows today's dollars when asked", () => {
+    const { compiled, result } = simulatePlan(mixed(), { startYear: YEAR })
+    const nominal = buildAccountBreakdown(compiled, result, false)
+    const real = buildAccountBreakdown(compiled, result, true)
+    const t = 25
+    expect(real[t].withdrawals.rrsp).toBeCloseTo(nominal[t].withdrawals.rrsp / result.rows[t].cpi, 4)
+    expect(real[t].balances.tfsa).toBeCloseTo(nominal[t].balances.tfsa / result.rows[t].cpi, 4)
   })
 })

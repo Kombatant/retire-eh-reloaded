@@ -58,6 +58,16 @@ describe('App smoke test', () => {
     expect(within(nav).getByText('Learn').closest('a')).toHaveAttribute('aria-current', 'page')
   })
 
+  it('shows where retirement money comes from, as a chart and a table', () => {
+    window.history.replaceState(null, '', '/#/projections/drawdown')
+    render(<App />)
+    expect(screen.getByText('Where your money comes from')).toBeInTheDocument()
+    expect(screen.getByText('Savings by account through retirement')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('radio', { name: 'Table' }))
+    expect(screen.getByRole('columnheader', { name: 'Left to spend after tax' })).toBeInTheDocument()
+    expect(screen.queryByText(/Something went wrong/i)).toBeNull()
+  })
+
   it('loads a plan saved by the v1 app', () => {
     localStorage.setItem('people', JSON.stringify([{
       id: '1', name: 'Legacy Larry', currentAge: 50, retirementAge: 62,

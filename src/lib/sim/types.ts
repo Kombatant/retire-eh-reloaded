@@ -236,6 +236,9 @@ export interface YearRow {
   contributions: number
   oneTimeExpenses: number
   withdrawal: number
+  // Recorded withdrawals per account (same order as CompiledPlan.accounts);
+  // they add up to `withdrawal`.
+  withdrawalsByAccount: number[]
   taxableWithdrawal: number
   taxFreeWithdrawal: number
   // Planned withdrawal the portfolio could not fund.

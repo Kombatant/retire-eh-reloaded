@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { usePlanStore } from '@/contexts/PlanStoreContext'
 import { useProjectionContext } from '@/contexts/ProjectionContext'
 import { useAssumptions } from '@/contexts/AssumptionsContext'
@@ -7,6 +7,7 @@ import { useDetailLevel } from '@/hooks/useDetailLevel'
 import { getPortfolioAtRetirement, CPP_BASELINE_AGE, CPP_MAX_START_AGE, CPP_MIN_START_AGE, OAS_BASELINE_AGE, OAS_MAX_START_AGE, getCppIncomeAtAge, getOasIncomeAtAge } from '@/lib/calculations'
 import { cppAmountAt65, primarySalary } from '@/lib/plan/legacy-view'
 import { hasStock } from '@/lib/insights/stockScenarios'
+import { buildAccountBreakdown } from '@/lib/insights/accountBreakdown'
 import { OAS_MAX_ANNUAL_2026 } from '@/lib/tax'
 import { money } from '@/lib/formatting'
 import { moneyMode } from '@/lib/ui/money'
@@ -20,7 +21,8 @@ import { Badge, MoneyModeBadge } from '@/components/ui/Badge'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { Disclosure } from '@/components/ui/Disclosure'
 import { StockScenariosCard } from './StockScenariosCard'
-import { BalancesChart, ContributionChart, DrawdownRatesChart } from './charts'
+import { ContributionChart, DrawdownRatesChart } from './charts'
+import { AccountBalancesChart, IncomeSourcesChart, IncomeSourcesTable } from './breakdown'
 
 const TABS = ['growth', 'drawdown', 'benefits', 'stocks'] as const
 type Tab = typeof TABS[number]
@@ -69,6 +71,15 @@ function GrowthPanel() {
   const data = scenario === 'conservative' ? projection.conservativeProjectionData
     : scenario === 'optimistic' ? projection.optimisticProjectionData
       : projection.currentProjectionData
+  const scenarioSim = scenario === 'conservative' ? projection.conservativeSimulation
+    : scenario === 'optimistic' ? projection.optimisticSimulation
+      : projection.simulation
+  const { compiledPlan } = projection
+  // Same years as the projection data: today through the first retirement year.
+  const breakdown = useMemo(
+    () => buildAccountBreakdown(compiledPlan, scenarioSim, assumptions.showRealValues).slice(0, compiledPlan.drawdownStartOffset + 1),
+    [compiledPlan, scenarioSim, assumptions.showRealValues],
+  )
 
   if (projection.yearsToRetirement <= 0 || data.length === 0) {
     return <Card><p className="text-sm text-fg-muted">You are already retired, so there are no saving years to project. See Retirement years.</p></Card>
@@ -112,7 +123,7 @@ function GrowthPanel() {
           }
         />
         {view === 'balances'
-          ? <BalancesChart data={data} />
+          ? <AccountBalancesChart rows={breakdown} />
           : <ContributionChart data={data} annualContribution={projection.totalAnnualContributions} showRealValues={assumptions.showRealValues} inflationRate={assumptions.inflationRate} />}
         <Disclosure label="How to read this" className="mt-4">
           <p className="max-w-3xl text-xs leading-relaxed text-fg-muted">
@@ -133,9 +144,46 @@ function DrawdownPanel() {
   const scale = estate && assumptions.showRealValues ? 1 / estate.cpi : 1
   const data = projection.currentProjectionData
   const startAge = data.length > 0 ? data[data.length - 1].age : projection.householdRetirementAge
+  const [sourcesView, setSourcesView] = useState<'chart' | 'table'>('chart')
+  const { compiledPlan, simulation } = projection
+  const retired = useMemo(
+    () => buildAccountBreakdown(compiledPlan, simulation, assumptions.showRealValues).filter(r => r.phase === 'drawdown'),
+    [compiledPlan, simulation, assumptions.showRealValues],
+  )
 
   return (
     <div className="space-y-5">
+      {retired.length > 0 && (
+        <>
+          <Card>
+            <CardHeader
+              title="Where your money comes from"
+              description="Each year of retirement: what you withdraw from each account, plus pensions and government benefits, and what is left to spend after tax."
+              actions={
+                <SegmentedControl
+                  ariaLabel="Show as"
+                  size="sm"
+                  value={sourcesView}
+                  onChange={setSourcesView}
+                  options={[{ value: 'chart', label: 'Chart' }, { value: 'table', label: 'Table' }]}
+                />
+              }
+            />
+            {sourcesView === 'chart' ? <IncomeSourcesChart rows={retired} /> : <IncomeSourcesTable rows={retired} />}
+            <Disclosure label="How to read this" className="mt-4">
+              <p className="max-w-3xl text-xs leading-relaxed text-fg-muted">
+                Withdrawals follow your withdrawal order (Plan › Withdrawals) and include required RRIF and LIF minimums.
+                When a minimum or a meltdown withdrawal is more than you need, the rest is reinvested after tax, so it shows as
+                withdrawn and then reinvested. Hover a year, or switch to the table, to see every source.
+              </p>
+            </Disclosure>
+          </Card>
+          <Card>
+            <CardHeader title="Savings by account through retirement" description="Balances at the start of each year." />
+            <AccountBalancesChart rows={retired} />
+          </Card>
+        </>
+      )}
       <Card>
         <CardHeader title="Withdrawal rates" description="What different yearly withdrawals do to your savings over retirement." />
         <DrawdownRatesChart

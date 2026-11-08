@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import {
-  Area, AreaChart, CartesianGrid, ComposedChart, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
+  Area, CartesianGrid, ComposedChart, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts'
 import type { ProjectionDataPoint } from '@/types/household'
 import type { PlannedGiftLite } from '@/lib/calculations'
@@ -12,51 +12,6 @@ import { ChartLegend } from '@/components/ui/ChartLegend'
 const yAxis = { ...axisProps, width: 60, tickFormatter: (v: number) => moneyCompact(v) }
 const ageLabel = (age: unknown) => `Age ${age}`
 const moneyFormatter = (value: unknown, name: unknown) => [money(Number(value ?? 0)), String(name ?? '')] as [string, string]
-
-// Balances by account group, stacked so the top edge is the total.
-export function BalancesChart({ data }: { data: ProjectionDataPoint[] }) {
-  const hasOther = data.some(d => (d.Other ?? 0) > 0)
-  const hasTfsa = data.some(d => (d.TFSA ?? 0) > 0)
-  const series = [
-    { key: 'RRSP', label: 'RRSP & registered', color: chartColors.registered },
-    ...(hasTfsa ? [{ key: 'TFSA', label: 'TFSA', color: chartColors.tfsa }] : []),
-    ...(hasOther ? [{ key: 'Other', label: 'Non-registered & cash', color: chartColors.nonRegistered }] : []),
-  ]
-
-  return (
-    <>
-      <ChartLegend className="mb-3" items={series.map(s => ({ label: s.label, color: s.color }))} />
-      <div className="h-80">
-        <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-            <CartesianGrid {...gridProps} />
-            <XAxis dataKey="age" {...axisProps} minTickGap={24} />
-            <YAxis {...yAxis} />
-            <Tooltip
-              {...tooltipProps}
-              labelFormatter={ageLabel}
-              formatter={moneyFormatter}
-            />
-            {series.map(s => (
-              <Area
-                key={s.key}
-                type="monotone"
-                dataKey={s.key}
-                name={s.label}
-                stackId="balances"
-                stroke={s.color}
-                strokeWidth={1.5}
-                fill={s.color}
-                fillOpacity={0.18}
-                isAnimationActive={false}
-              />
-            ))}
-          </AreaChart>
-        </ResponsiveContainer>
-      </div>
-    </>
-  )
-}
 
 export function ContributionChart({ data, annualContribution, showRealValues, inflationRate }: {
   data: ProjectionDataPoint[]

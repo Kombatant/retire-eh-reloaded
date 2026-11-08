@@ -18,6 +18,8 @@ export const chartColors = {
   nonRegistered: series(4),
   fhsa: series(7),
   stock: series(2),
+  lockedIn: series(5),
+  cash: series(6),
 
   // Retirement income sources, in stacking order.
   withdrawals: series(1),

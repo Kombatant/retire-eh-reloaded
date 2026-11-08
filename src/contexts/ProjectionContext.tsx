@@ -22,6 +22,9 @@ interface ProjectionContextValueTyped {
   // Unified engine output for the active plan at its expected return.
   compiledPlan: CompiledPlan
   simulation: SimResult
+  // The same plan at 2 points below and above the expected return.
+  conservativeSimulation: SimResult
+  optimisticSimulation: SimResult
   retirementCashFlow: CashFlowRow[]
   projectionData: ProjectionDataPoint[]
   conservativeProjectionData: ProjectionDataPoint[]
@@ -110,7 +113,7 @@ export function ProjectionProvider({ children }: { children: ReactNode }) {
 
   return (
     <ProjectionContext.Provider value={{
-      compiledPlan, simulation, retirementCashFlow,
+      compiledPlan, simulation, conservativeSimulation, optimisticSimulation, retirementCashFlow,
       projectionData, conservativeProjectionData, optimisticProjectionData,
       realProjectionData, currentProjectionData: projectionData,
       householdRetirementAge, yearsToRetirement, minCurrentAge,
