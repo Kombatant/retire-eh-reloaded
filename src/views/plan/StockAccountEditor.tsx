@@ -2,12 +2,13 @@ import { useState } from 'react'
 import { ChevronDown, ChevronRight, RefreshCw, X } from 'lucide-react'
 import { usePlanStore } from '@/contexts/PlanStoreContext'
 import { useStockQuotes } from '@/hooks/useStockQuotes'
-import { addHolding, patchHolding, removeHolding, setStockSalePlan, setStockScenario } from '@/lib/plan/edits'
+import { addHolding, patchHolding, removeHolding, setStockSalePlan, setStockScenario, setUsdCad } from '@/lib/plan/edits'
 import { newId } from '@/lib/plan/ids'
-import { STOCK_SCENARIOS, type AccountV2, type Holding, type RsuGrant, type StockScenario } from '@/lib/plan/schema'
+import { DEFAULT_USD_CAD, STOCK_SCENARIOS, type AccountV2, type Holding, type RsuGrant, type StockScenario } from '@/lib/plan/schema'
 import { QUOTE_PROVIDERS, isStale, type QuoteProvider } from '@/lib/market/quotes'
 import { formatMoney } from '@/lib/formatting'
 import { NumberInput } from '@/components/ui/NumberInput'
+import { DecimalInput } from '@/components/ui/inputs'
 import { TimePointPicker } from '@/components/ui/TimePointPicker'
 import { InfoTooltip } from '@/components/ui/InfoTooltip'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
@@ -19,23 +20,12 @@ const labelClass = `${sharedLabelClass} mb-1.5`
 const inputClass = `${controlBase} ${controlSize.md}`
 const SCENARIO_LABELS: Record<StockScenario, string> = { bear: 'Bear', base: 'Base', bull: 'Bull' }
 
-function numberField(value: number, onChange: (v: number) => void, props: { step?: number; min?: number; max?: number; label: string }) {
-  return (
-    <input
-      type="number"
-      step={props.step ?? 1}
-      min={props.min}
-      max={props.max}
-      value={Number.isFinite(value) ? value : ''}
-      onChange={(e) => {
-        const v = parseFloat(e.target.value)
-        if (Number.isFinite(v)) onChange(v)
-      }}
-      className={inputClass}
-      aria-label={props.label}
-    />
-  )
+// Shares, percentages and other plain numbers; decimals are allowed.
+function numberField(value: number, onChange: (v: number) => void, props: { min?: number; max?: number; label: string }) {
+  return <DecimalInput value={value} onChange={onChange} min={props.min} max={props.max} ariaLabel={props.label} />
 }
+
+const usd = (v: number) => `US$${v.toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`
 
 function vestYear(grant: RsuGrant, nowYear: number): string {
   const at = grant.vestAt
@@ -100,7 +90,8 @@ function VestingSchedule({ holding, onChange, personId }: { holding: Holding; on
 }
 
 function HoldingRow({ account, holding }: { account: StockAccount; holding: Holding }) {
-  const { updateActivePlan, nowYear } = usePlanStore()
+  const { activePlan, updateActivePlan, nowYear } = usePlanStore()
+  const usdCad = activePlan.assumptions.usdCad.rate
   const quotes = useStockQuotes()
   const [open, setOpen] = useState(false)
   const [showVesting, setShowVesting] = useState(false)
@@ -118,8 +109,10 @@ function HoldingRow({ account, holding }: { account: StockAccount; holding: Hold
     }
     if (shares <= 0) return update({ rsuGrants: [] })
     const scale = unvested > 0 ? shares / unvested : 1
-    const scaled = holding.rsuGrants.map(g => ({ ...g, shares: Math.round(g.shares * scale) }))
-    scaled[scaled.length - 1].shares += shares - scaled.reduce((s, g) => s + g.shares, 0)
+    const round4 = (v: number) => Math.round(v * 10000) / 10000
+    const scaled = holding.rsuGrants.map(g => ({ ...g, shares: round4(g.shares * scale) }))
+    const last = scaled[scaled.length - 1]
+    last.shares = Math.max(0, round4(last.shares + shares - scaled.reduce((s, g) => s + g.shares, 0)))
     update({ rsuGrants: scaled })
   }
 
@@ -148,8 +141,8 @@ function HoldingRow({ account, holding }: { account: StockAccount; holding: Hold
           {numberField(unvested, setUnvested, { min: 0, label: 'Unvested shares' })}
         </label>
         <label>
-          <span className={labelClass}>Price (CAD)</span>
-          <NumberInput value={holding.price} onChange={(v) => update({ price: v, lastQuote: undefined })} min={0} ariaLabel="Price per share in CAD" />
+          <span className={labelClass}>Price (USD)</span>
+          <NumberInput value={holding.priceUsd} onChange={(v) => update({ priceUsd: v, lastQuote: undefined })} min={0} decimals={4} prefix="US$" ariaLabel="Price per share in USD" />
         </label>
         <div className="flex items-center gap-1 pb-1">
           <button onClick={() => setOpen(!open)} className="flex items-center gap-0.5 text-xs text-accent min-h-[28px]" aria-expanded={open}>
@@ -163,18 +156,18 @@ function HoldingRow({ account, holding }: { account: StockAccount; holding: Hold
       </div>
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-fg-muted">
-        <span>Vested value ${formatMoney(holding.shares * holding.price)}</span>
+        <span>Vested value ${formatMoney(holding.shares * holding.priceUsd * usdCad)} CAD</span>
         {unvested > 0 && (
           <button onClick={() => setShowVesting(!showVesting)} className="text-accent">
-            Unvested ${formatMoney(unvested * holding.price)} at today's price · {holding.rsuGrants.length} tranche{holding.rsuGrants.length === 1 ? '' : 's'}
+            Unvested ${formatMoney(unvested * holding.priceUsd * usdCad)} CAD at today's price · {holding.rsuGrants.length} tranche{holding.rsuGrants.length === 1 ? '' : 's'}
             {holding.rsuGrants.length > 0 && ` (${holding.rsuGrants.map(g => vestYear(g, nowYear)).join(', ')})`} — {showVesting ? 'hide' : 'edit'} schedule
           </button>
         )}
         {quote && !error && (
           <span title={`Fetched ${quote.fetchedAt.slice(0, 16).replace('T', ' ')}`}>
-            {quote.currency === 'CAD'
-              ? `C$${quote.price.toFixed(2)}`
-              : `${quote.currency} ${quote.price.toFixed(2)} × ${quote.fxToCad.toFixed(4)} (Bank of Canada)`}
+            {quote.currency === 'USD'
+              ? usd(quote.price)
+              : `${quote.currency} ${quote.price.toFixed(2)} = ${usd(holding.priceUsd)} (Bank of Canada rates)`}
             {' '}· {quote.source}, {quote.asOf.slice(0, 10)}{isStale(quote.fetchedAt) ? ' · refresh due' : ''}
           </span>
         )}
@@ -189,12 +182,12 @@ function HoldingRow({ account, holding }: { account: StockAccount; holding: Hold
         <div className="space-y-2 pt-1">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <label>
-              <span className={labelClass}>Average cost / share</span>
-              <NumberInput value={holding.costPerShare ?? holding.price} onChange={(v) => update({ costPerShare: v })} min={0} ariaLabel="Average cost per share" />
+              <span className={labelClass}>Average cost / share (CAD)</span>
+              <NumberInput value={holding.costPerShare ?? Math.round(holding.priceUsd * usdCad * 100) / 100} onChange={(v) => update({ costPerShare: v })} min={0} decimals={4} ariaLabel="Average cost per share in CAD" />
             </label>
             <label>
               <span className={labelClass}>Dividend yield %</span>
-              {numberField(holding.dividendYieldPct, v => update({ dividendYieldPct: Math.max(0, v) }), { step: 0.1, min: 0, label: 'Dividend yield' })}
+              {numberField(holding.dividendYieldPct, v => update({ dividendYieldPct: Math.max(0, v) }), { min: 0, max: 20, label: 'Dividend yield' })}
             </label>
             <label>
               <span className={labelClass}>Dividends are</span>
@@ -220,7 +213,7 @@ function HoldingRow({ account, holding }: { account: StockAccount; holding: Hold
               {STOCK_SCENARIOS.map(sc => (
                 <label key={sc} className="flex items-center gap-1.5 text-xs text-fg-secondary">
                   <span className="w-9">{SCENARIO_LABELS[sc]}</span>
-                  {numberField(holding.growthPct[sc], v => update({ growthPct: { ...holding.growthPct, [sc]: v } }), { step: 0.5, label: `${SCENARIO_LABELS[sc]} growth` })}
+                  {numberField(holding.growthPct[sc], v => update({ growthPct: { ...holding.growthPct, [sc]: v } }), { min: -50, max: sc === 'bull' ? 100 : 50, label: `${SCENARIO_LABELS[sc]} growth` })}
                 </label>
               ))}
             </div>
@@ -295,7 +288,7 @@ function MarketDataSettingsPanel() {
         Update prices automatically once a day when I open the plan
       </label>
       <p className="text-[11px] text-fg-muted">
-        {provider.note} US-dollar prices are converted with the Bank of Canada daily rate. The key is stored only in this browser and is
+        {provider.note} Share prices are kept in US dollars; Canadian listings are converted with Bank of Canada daily rates. The key is stored only in this browser and is
         never included in exports or share links; your symbols are sent to {provider.name} to look up prices.
       </p>
     </div>
@@ -308,8 +301,9 @@ export function StockAccountEditor({ account }: { account: StockAccount }) {
   const [showSettings, setShowSettings] = useState(!quotes.settings.apiKey)
   const sale = account.salePlan
   const scenario = activePlan.assumptions.stockScenario
-  const vestedValue = account.holdings.reduce((s, h) => s + h.shares * h.price, 0)
-  const unvestedValue = account.holdings.reduce((s, h) => s + h.rsuGrants.reduce((t, g) => t + g.shares, 0) * h.price, 0)
+  const fx = activePlan.assumptions.usdCad
+  const vestedValue = account.holdings.reduce((s, h) => s + h.shares * h.priceUsd, 0) * fx.rate
+  const unvestedValue = account.holdings.reduce((s, h) => s + h.rsuGrants.reduce((t, g) => t + g.shares, 0) * h.priceUsd, 0) * fx.rate
   const hasSymbols = account.holdings.some(h => h.symbol.trim())
   const anchor = account.ownerId === 'joint' ? activePlan.people[0].id : account.ownerId
 
@@ -317,7 +311,7 @@ export function StockAccountEditor({ account }: { account: StockAccount }) {
     <div className="space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
         <span className="text-fg-secondary">
-          Vested <strong className="text-fg">${formatMoney(vestedValue)}</strong>
+          Vested <strong className="text-fg">${formatMoney(vestedValue)}</strong> CAD
           {unvestedValue > 0 && <> · unvested ${formatMoney(unvestedValue)}</>}
         </span>
         <div className="flex items-center gap-3">
@@ -336,6 +330,23 @@ export function StockAccountEditor({ account }: { account: StockAccount }) {
         </div>
       </div>
       {showSettings && <MarketDataSettingsPanel />}
+
+      <div className="flex flex-wrap items-end gap-x-3 gap-y-1 text-xs">
+        <label>
+          <span className={labelClass}>
+            US$1 in Canadian dollars
+            <InfoTooltip text="Share prices are entered in US dollars and converted to Canadian dollars at this rate. Projections keep the rate constant." />
+          </span>
+          <DecimalInput value={fx.rate} min={0.01} max={10} onChange={(v) => updateActivePlan(p => setUsdCad(p, v))} className="w-28" ariaLabel="USD to CAD exchange rate" />
+        </label>
+        <span className="pb-2.5 text-[11px] text-fg-muted">
+          {fx.asOf ? `Bank of Canada, ${fx.asOf}` : fx.rate === DEFAULT_USD_CAD ? 'Default rate' : 'Entered by you'}
+        </span>
+        <button onClick={() => void quotes.refreshRate()} disabled={quotes.refreshing} className="pb-2 text-accent font-medium min-h-[28px] disabled:text-fg-muted">
+          Use today's rate
+        </button>
+        {quotes.rateError && <span className="pb-2.5 text-[11px] text-danger">{quotes.rateError}</span>}
+      </div>
 
       {account.holdings.map(h => <HoldingRow key={h.id} account={account} holding={h} />)}
       <button onClick={() => updateActivePlan(p => addHolding(p, account.id))} className="text-xs text-accent font-medium min-h-[28px]">

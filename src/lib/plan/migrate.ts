@@ -1,6 +1,6 @@
 import { retirementPlanSchema, validateYamlImport } from '@/lib/validation'
 import type { RetirementPlan } from '@/types/plan'
-import { planSchema, GIFT_CATEGORY, type PlanV2, type PlanV2Input, type UiPrefs } from './schema'
+import { planSchema, DEFAULT_USD_CAD, GIFT_CATEGORY, type PlanV2, type PlanV2Input, type UiPrefs } from './schema'
 import { isoDate } from './defaults'
 import { newId } from './ids'
 
@@ -124,13 +124,41 @@ export function migrateV1ToV2(
   return { plan: planSchema.parse(input), uiPrefs: { showRealValues: v1.assumptions.showRealValues } }
 }
 
+// The first stock-portfolio release stored the share price in Canadian
+// dollars (`price`). It is now entered in US dollars (`priceUsd`). A USD quote
+// gives the exact USD price; otherwise convert at the plan's rate. The cost
+// per share stays in Canadian dollars.
+export function upgradeLegacyStockPrices(data: unknown): unknown {
+  if (!isRecord(data) || !Array.isArray(data.accounts)) return data
+  const assumptions = isRecord(data.assumptions) ? data.assumptions : {}
+  const usdCad = isRecord(assumptions.usdCad) && typeof assumptions.usdCad.rate === 'number' && assumptions.usdCad.rate > 0
+    ? assumptions.usdCad.rate
+    : DEFAULT_USD_CAD
+  let changed = false
+  const accounts = data.accounts.map(account => {
+    if (!isRecord(account) || account.type !== 'STOCK' || !Array.isArray(account.holdings)) return account
+    const holdings = account.holdings.map(holding => {
+      if (!isRecord(holding) || 'priceUsd' in holding || typeof holding.price !== 'number') return holding
+      changed = true
+      const { price, ...rest } = holding
+      const quote = isRecord(holding.lastQuote) ? holding.lastQuote : null
+      const priceUsd = quote?.currency === 'USD' && typeof quote.price === 'number'
+        ? quote.price
+        : Math.round(((price as number) / usdCad) * 10000) / 10000
+      return { ...rest, priceUsd }
+    })
+    return { ...account, holdings }
+  })
+  return changed ? { ...data, accounts } : data
+}
+
 // Single entry point for every external plan source (YAML, share links,
 // stored plans). Older formats are migrated forward, then validated as v2.
 export function parsePlanData(data: unknown, opts: { now: Date; lenientV1?: boolean }): ParsePlanResult {
   const version = detectSchemaVersion(data)
 
   if (version === 2) {
-    const result = planSchema.safeParse(data)
+    const result = planSchema.safeParse(upgradeLegacyStockPrices(data))
     if (!result.success) return { success: false, errors: formatIssues(result.error.issues) }
     return { success: true, plan: result.data, uiPrefs: {}, migratedFrom: null }
   }

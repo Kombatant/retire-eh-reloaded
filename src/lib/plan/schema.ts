@@ -121,6 +121,9 @@ const lockedInJurisdiction = provinceSchema.or(z.literal('FED')).optional()
 // --- Individual stock holdings (stock portfolio account) ---------------------
 
 export const STOCK_SCENARIOS = ['bear', 'base', 'bull'] as const
+
+// Fallback USD→CAD rate until the Bank of Canada rate is fetched.
+export const DEFAULT_USD_CAD = 1.38
 export type StockScenario = (typeof STOCK_SCENARIOS)[number]
 
 // Unvested RSUs/PSUs: shares that vest on a date. The value at vesting is
@@ -145,12 +148,14 @@ export const esppSchema = z.object({
 })
 export type Espp = z.infer<typeof esppSchema>
 
+// The share price is entered in US dollars, whatever the listing, and converted
+// to Canadian dollars with the plan's USD→CAD rate (assumptions.usdCad).
 export const holdingSchema = z.object({
   id,
   symbol: z.string().default(''),
   shares: z.number().min(0),
-  price: money, // current price per share (CAD)
-  costPerShare: money.optional(), // undefined = current price (no gain)
+  priceUsd: money, // current price per share (USD)
+  costPerShare: money.optional(), // average cost per share (CAD); undefined = current price (no gain)
   dividendYieldPct: percent(0, 20).default(0),
   // Canadian eligible dividends get the dividend tax credit; foreign dividends are ordinary income.
   dividendType: z.enum(['eligible', 'foreign']).default('eligible'),
@@ -164,11 +169,11 @@ export const holdingSchema = z.object({
   volatilityPct: percent(0, 150).default(30),
   rsuGrants: z.array(rsuGrantSchema).default([]),
   espp: esppSchema.optional(),
-  // Last market quote used to set `price` (price is always CAD).
+  // Last market quote used to set `priceUsd`.
   lastQuote: z.object({
     price: z.number().min(0), // in the quote currency
     currency: z.string().min(3).max(3),
-    fxToCad: z.number().positive(),
+    fxToCad: z.number().positive(), // CAD per unit of the quote currency
     asOf: z.string(), // ISO date-time of the quote
     fetchedAt: z.string(), // when this app fetched it
     source: z.string(),
@@ -212,7 +217,7 @@ export const accountSchema = z.discriminatedUnion('type', [
   }),
   z.object({ ...accountBase, type: z.literal('CASH') }),
   // A non-registered account of individual stocks. Its balance is derived
-  // from the holdings (shares × price).
+  // from the holdings (shares × USD price × USD→CAD rate).
   z.object({
     ...accountBase,
     type: z.literal('STOCK'),
@@ -372,6 +377,12 @@ export const assumptionsSchema = z.object({
   reinvestRrspRefund: z.boolean().default(false),
   // Which price-growth case to use for individual stocks in projections.
   stockScenario: z.enum(STOCK_SCENARIOS).default('base'),
+  // Canadian dollars per US dollar, for stock prices. Projections hold it
+  // constant. Updated from the Bank of Canada's daily rate when prices refresh.
+  usdCad: z.object({
+    rate: z.number().positive().default(DEFAULT_USD_CAD),
+    asOf: z.string().optional(), // date of the Bank of Canada observation
+  }).prefault({}),
   // Long-run nominal returns per asset class, used for accounts with an
   // allocation. Defaults follow the FP Canada projection assumption guidelines.
   assetReturns: z.object({

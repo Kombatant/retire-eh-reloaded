@@ -91,6 +91,24 @@ describe('NumberInput', () => {
     fireEvent.change(input, { target: { value: '$1,500' } })
     expect(onChange).toHaveBeenLastCalledWith(1500)
   })
+
+  it('accepts decimals, keeping a trailing point while typing', () => {
+    const onChange = vi.fn()
+    const { rerender } = render(<NumberInput value={1850} onChange={onChange} ariaLabel="Payment" />)
+    const input = screen.getByRole('textbox', { name: 'Payment' }) as HTMLInputElement
+    act(() => input.focus())
+    fireEvent.change(input, { target: { value: '1850.' } })
+    rerender(<NumberInput value={1850} onChange={onChange} ariaLabel="Payment" />)
+    expect(input.value).toBe('1850.')
+    fireEvent.change(input, { target: { value: '1850.75' } })
+    expect(onChange).toHaveBeenLastCalledWith(1850.75)
+    // More digits than allowed are ignored.
+    fireEvent.change(input, { target: { value: '1850.755' } })
+    expect(onChange).toHaveBeenLastCalledWith(1850.75)
+    rerender(<NumberInput value={1850.75} onChange={onChange} ariaLabel="Payment" />)
+    act(() => input.blur())
+    expect(input.value).toBe('1,850.75')
+  })
 })
 
 describe('Field', () => {

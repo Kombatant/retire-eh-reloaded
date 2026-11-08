@@ -145,18 +145,30 @@ export async function fetchFxToCad(currency: string, fetchImpl: FetchLike = fetc
   return rate
 }
 
+// The latest Bank of Canada USD→CAD rate (no API key needed).
+export async function fetchUsdCad(fetchImpl: FetchLike = fetch): Promise<{ rate: number; asOf?: string }> {
+  const body = await getJson(fetchImpl, 'https://www.bankofcanada.ca/valet/observations/FXUSDCAD/json?recent=1')
+  const observation = (body.observations as Record<string, unknown>[] | undefined)?.[0]
+  const rate = num((observation?.FXUSDCAD as { v?: string } | undefined)?.v)
+  if (!(rate > 0)) throw new QuoteError('notFound', 'No Bank of Canada exchange rate for USD.')
+  return { rate, asOf: typeof observation?.d === 'string' ? observation.d : undefined }
+}
+
 export interface PricedQuote extends Quote {
-  fxToCad: number
-  priceCad: number
+  fxToCad: number // CAD per unit of the quote currency
+  priceUsd: number
 }
 
 export interface RefreshResult {
   prices: Record<string, PricedQuote> // by symbol as typed (upper case)
   errors: Record<string, string>
+  usdCad?: { rate: number; asOf?: string }
 }
 
-// Fetch every distinct symbol once, converting to CAD. Requests are spaced to
-// respect free-tier per-minute limits; one failure does not stop the rest.
+// Fetch every distinct symbol once and express it in US dollars: a CAD
+// listing is converted through CAD at Bank of Canada rates. Requests are
+// spaced to respect free-tier per-minute limits; one failure does not stop
+// the rest.
 export async function refreshQuotes(
   symbols: string[],
   provider: QuoteProvider,
@@ -167,14 +179,23 @@ export async function refreshQuotes(
   const delay = opts.delayMs ?? 300
   const unique = [...new Set(symbols.map(s => s.trim().toUpperCase()).filter(Boolean))]
   const result: RefreshResult = { prices: {}, errors: {} }
-  const fx = new Map<string, number>()
+  if (unique.length === 0) return result
+  try {
+    result.usdCad = await fetchUsdCad(fetchImpl)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Exchange rate failed.'
+    for (const symbol of unique) result.errors[symbol] = `Could not get the USD→CAD rate: ${message}`
+    return result
+  }
+  const usdCad = result.usdCad.rate
+  const fx = new Map<string, number>([['CAD', 1], ['USD', usdCad]])
   for (let i = 0; i < unique.length; i++) {
     const symbol = unique[i]
     try {
       const quote = await fetchQuote(provider, apiKey, symbol, fetchImpl)
       if (!fx.has(quote.currency)) fx.set(quote.currency, await fetchFxToCad(quote.currency, fetchImpl))
       const rate = fx.get(quote.currency)!
-      result.prices[symbol] = { ...quote, fxToCad: rate, priceCad: quote.price * rate }
+      result.prices[symbol] = { ...quote, fxToCad: rate, priceUsd: quote.currency === 'USD' ? quote.price : (quote.price * rate) / usdCad }
     } catch (error) {
       result.errors[symbol] = error instanceof Error ? error.message : 'Quote failed.'
       // Bad key or rate limit will fail every remaining symbol too.

@@ -150,6 +150,7 @@ Provider order in `App.tsx`: ThemeProvider › ToastProvider › RouteProvider �
   - The key is stored in localStorage (`retireEh.marketData`) and never in the plan, so it isn't exported or shared.
   - `useAutoRefreshQuotes` (in App) refreshes stale prices once a day.
 - Stock portfolio accounts (`type: 'STOCK'`): holdings with vested shares, unvested RSU tranches, ESPP, a bear/base/bull price projection, and a sell plan.
+  - The share price (`priceUsd`) is always in USD, converted at the plan's `assumptions.usdCad.rate` (Bank of Canada, held constant in projections). Every other amount, including the cost per share, is CAD. Older plans that stored a CAD `price` are converted in `parsePlanData`.
   - Vesting and the ESPP benefit are taxed as employment income.
   - `src/lib/insights/stockScenarios.ts` compares the three cases with and without the sell plan.
 - `src/lib/formatting.ts` - `money()` / `moneyCompact()` (with `$`) and `formatMoney()` / `formatCompactMoney()` (digits only) for all currency display

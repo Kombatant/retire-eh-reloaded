@@ -1,4 +1,4 @@
-import type { AccountType, AccountV2 } from './schema'
+import type { AccountType, AccountV2, Holding } from './schema'
 
 export const ACCOUNT_LABELS: Record<AccountType, string> = {
   RRSP: 'RRSP',
@@ -44,8 +44,13 @@ export function groupBalances(accounts: Pick<AccountV2, 'type' | 'balance'>[]): 
   return totals
 }
 
-// What an account is worth today. Stock accounts hold shares, not a balance.
-export function accountValue(account: AccountV2): number {
-  if (account.type === 'STOCK') return account.holdings.reduce((s, h) => s + h.shares * h.price, 0)
+// Market value of stock holdings in Canadian dollars. Prices are in USD.
+export function stockValueCad(holdings: Pick<Holding, 'shares' | 'priceUsd'>[], usdCad: number): number {
+  return holdings.reduce((s, h) => s + h.shares * h.priceUsd, 0) * usdCad
+}
+
+// What an account is worth today, in CAD. Stock accounts hold shares, not a balance.
+export function accountValue(account: AccountV2, usdCad: number): number {
+  if (account.type === 'STOCK') return stockValueCad(account.holdings, usdCad)
   return account.balance || 0
 }

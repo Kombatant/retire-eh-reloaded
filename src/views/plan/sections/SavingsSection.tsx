@@ -52,6 +52,7 @@ export function SavingsSection() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const people = activePlan.people
   const accounts = activePlan.accounts
+  const usdCad = activePlan.assumptions.usdCad.rate
   const editing = accounts.find(a => a.id === editingId) ?? null
   const ownerId = selectedPersonId ?? people[0].id
 
@@ -73,7 +74,7 @@ export function SavingsSection() {
   }))
 
   const totals: Record<AccountGroup, number> = { registered: 0, tfsa: 0, taxable: 0 }
-  for (const a of accounts) totals[accountGroup(a.type)] += accountValue(a)
+  for (const a of accounts) totals[accountGroup(a.type)] += accountValue(a, usdCad)
   const total = totals.registered + totals.tfsa + totals.taxable
 
   return (
@@ -111,7 +112,7 @@ export function SavingsSection() {
                           leading={<span className="block h-2.5 w-2.5 rounded-full" style={{ background: GROUP_COLOR[accountGroup(account.type)] }} aria-hidden />}
                           title={account.label || ACCOUNT_LABELS[account.type]}
                           subtitle={account.label ? ACCOUNT_LABELS[account.type] : ACCOUNT_DESCRIPTIONS[account.type]}
-                          value={money(accountValue(account))}
+                          value={money(accountValue(account, usdCad))}
                           valueSub={account.type !== 'STOCK' && contribution > 0 ? `+${money(contribution)}/yr` : undefined}
                           onOpen={() => setEditingId(account.id)}
                           openLabel={`Edit ${account.label || ACCOUNT_LABELS[account.type]}`}

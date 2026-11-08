@@ -17,11 +17,20 @@ function plan(stock: Partial<StockInput>, overrides: Partial<PlanV2Input> = {}, 
     people: [{ id: 'a', name: 'A', birthYear: YEAR - age, retirementAge, province: 'ON', cpp: { mode: 'amount', amountAt65: 0 }, oas: { yearsInCanadaAfter18: 0 } }],
     accounts: [{ id: 's', ownerId: 'a', type: 'STOCK', balance: 0, ...stock }],
     ...overrides,
+    // Par exchange rate keeps the expected values in round numbers.
+    assumptions: { usdCad: { rate: 1 }, ...overrides.assumptions },
   })
 }
-const holding = (extra: object = {}) => ({ id: 'h', symbol: 'ACME', shares: 100, price: 50, growthPct: { bear: -5, base: 10, bull: 20 }, ...extra })
+const holding = (extra: object = {}) => ({ id: 'h', symbol: 'ACME', shares: 100, priceUsd: 50, growthPct: { bear: -5, base: 10, bull: 20 }, ...extra })
 
 describe('stock holdings', () => {
+  it('converts the USD share price to CAD; the cost per share is already CAD', () => {
+    const p = plan({ holdings: [holding({ costPerShare: 60 })] }, { assumptions: { usdCad: { rate: 1.4 } } }, 40, 65)
+    const { compiled } = simulatePlan(p, flat)
+    expect(compiled.accounts[0].initialBalance).toBeCloseTo(7000, 6)
+    expect(compiled.accounts[0].initialAcb).toBeCloseTo(6000, 6)
+  })
+
   it('derives the balance from shares × price and grows each holding at its projection', () => {
     const p = plan({ holdings: [holding()] }, { drawdown: { strategy: { kind: 'initialPct', ratePct: 0.01 } } }, 40, 65)
     const { compiled, result } = simulatePlan(p, flat)
@@ -113,6 +122,7 @@ describe('selling stock to fund retirement', () => {
       ],
       expenses: { mode: 'detailed', items: [{ id: 'e', amount: 60000 }] },
       drawdown: { strategy: { kind: 'expenses' } },
+      assumptions: { usdCad: { rate: 1 } },
     })
     const rows = simulatePlan(p, flat).result.rows
     // First year: the $50k of stock is used up before the TFSA is touched.

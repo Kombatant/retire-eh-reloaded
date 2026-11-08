@@ -124,17 +124,19 @@ export function compilePlan(plan: PlanV2, { startYear, rules = 'v2' }: CompileOp
   // purchases and a sell plan. Balance and cost base come from the holdings.
   let holdingCount = 0
   const scenario = plan.assumptions.stockScenario
+  const usdCad = plan.assumptions.usdCad.rate
   plan.accounts.forEach((a, i) => {
     if (a.type !== 'STOCK') return
     const acct = accounts[i]
     const owner = acct.ownerIndex
     const ownerRetirement = owner >= 0 ? people[owner].retirementOffset : drawdownStartOffset
+    // Share prices are entered in USD; the engine works in CAD at a constant rate.
     const holdings = a.holdings.map(h => ({
       index: holdingCount++,
       symbol: h.symbol,
       shares: h.shares,
-      price: h.price,
-      acb: h.shares * (h.costPerShare ?? h.price),
+      price: h.priceUsd * usdCad,
+      acb: h.shares * (h.costPerShare ?? h.priceUsd * usdCad),
       growth: h.growthPct[scenario] / 100,
       dividendYield: h.dividendYieldPct / 100,
       dividendEligible: h.dividendType === 'eligible',

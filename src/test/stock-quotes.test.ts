@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { fetchFxToCad, fetchQuote, isStale, parseSymbol, refreshQuotes, QuoteError } from '@/lib/market/quotes'
-import { addAccount, addHolding, applyQuotes, newHolding, patchHolding } from '@/lib/plan/edits'
+import { fetchFxToCad, fetchQuote, fetchUsdCad, isStale, parseSymbol, refreshQuotes, QuoteError } from '@/lib/market/quotes'
+import { addAccount, addHolding, applyQuotes, newHolding, patchHolding, setUsdCad } from '@/lib/plan/edits'
+import { parsePlanData } from '@/lib/plan/migrate'
 import { createDefaultPlan } from '@/lib/plan/defaults'
 import { planSchema } from '@/lib/plan/schema'
 
@@ -62,11 +63,12 @@ describe('quote providers', () => {
     expect(await fetchFxToCad('USD', fetchImpl)).toBeCloseTo(1.4113, 10)
     expect(calls[0]).toContain('FXUSDCAD')
     expect(await fetchFxToCad('CAD', fetchImpl)).toBe(1)
+    expect(await fetchUsdCad(fetchImpl)).toEqual({ rate: 1.4113, asOf: '2026-11-06' })
   })
 })
 
 describe('refreshing a portfolio', () => {
-  it('fetches each symbol once, converts USD prices and keeps going after a bad symbol', async () => {
+  it('fetches each symbol once, expresses prices in USD and keeps going after a bad symbol', async () => {
     const { fetchImpl, calls } = mockFetch(url => {
       if (url.includes('bankofcanada')) return { body: boc('1.40') }
       if (url.includes('symbol=AAPL')) return { body: { currency: 'USD', close: '200' } }
@@ -74,29 +76,40 @@ describe('refreshing a portfolio', () => {
       return { body: { status: 'error', code: 404, message: 'x' } }
     })
     const result = await refreshQuotes(['AAPL', 'aapl', 'SHOP.TO', 'ZZZZ'], 'twelvedata', 'k', { fetchImpl, delayMs: 0 })
-    expect(result.prices.AAPL).toMatchObject({ price: 200, currency: 'USD', fxToCad: 1.4, priceCad: 280 })
-    expect(result.prices['SHOP.TO'].priceCad).toBe(150)
+    expect(result.prices.AAPL).toMatchObject({ price: 200, currency: 'USD', fxToCad: 1.4, priceUsd: 200 })
+    // A TSX listing in CAD is converted to USD.
+    expect(result.prices['SHOP.TO'].priceUsd).toBeCloseTo(150 / 1.4, 10)
+    expect(result.usdCad).toEqual({ rate: 1.4, asOf: '2026-11-06' })
     expect(result.errors.ZZZZ).toBeDefined()
     expect(calls.filter(u => u.includes('symbol=AAPL'))).toHaveLength(1)
     expect(calls.filter(u => u.includes('bankofcanada'))).toHaveLength(1)
   })
 
   it('stops early when the key is rejected', async () => {
-    const { fetchImpl, calls } = mockFetch(() => ({ body: { status: 'error', code: 401, message: 'Invalid API key' } }))
+    const { fetchImpl, calls } = mockFetch(url => (url.includes('bankofcanada')
+      ? { body: boc('1.40') }
+      : { body: { status: 'error', code: 401, message: 'Invalid API key' } }))
     const result = await refreshQuotes(['A', 'B', 'C'], 'twelvedata', 'bad', { fetchImpl, delayMs: 0 })
-    expect(calls).toHaveLength(1)
+    expect(calls.filter(u => !u.includes('bankofcanada'))).toHaveLength(1)
     expect(Object.keys(result.errors)).toEqual(['A', 'B', 'C'])
   })
 
   it('applies quotes to every matching holding and keeps the balance in sync', () => {
     let plan = createDefaultPlan(new Date('2026-06-01'))
     plan = addAccount(plan, plan.people[0].id, 'STOCK', 'stk')
-    plan = addHolding(plan, 'stk', { ...newHolding('h1'), symbol: 'AAPL', shares: 10, price: 100 })
-    expect(plan.accounts.find(a => a.id === 'stk')!.balance).toBe(1000)
-    plan = applyQuotes(plan, { AAPL: { price: 200, currency: 'USD', fxToCad: 1.4, priceCad: 280, asOf: '2026-11-06T21:00:00Z', source: 'Twelve Data' } }, '2026-11-07T10:00:00Z')
+    plan = setUsdCad(plan, 1.25)
+    plan = addHolding(plan, 'stk', { ...newHolding('h1'), symbol: 'AAPL', shares: 10, priceUsd: 100 })
+    expect(plan.accounts.find(a => a.id === 'stk')!.balance).toBeCloseTo(1250, 6)
+    plan = applyQuotes(
+      plan,
+      { AAPL: { price: 200, currency: 'USD', fxToCad: 1.4, priceUsd: 200, asOf: '2026-11-06T21:00:00Z', source: 'Twelve Data' } },
+      '2026-11-07T10:00:00Z',
+      { rate: 1.4, asOf: '2026-11-06' },
+    )
     const account = plan.accounts.find(a => a.id === 'stk')!
-    expect(account.type === 'STOCK' && account.holdings[0].price).toBe(280)
-    expect(account.balance).toBe(2800)
+    expect(account.type === 'STOCK' && account.holdings[0].priceUsd).toBe(200)
+    expect(plan.assumptions.usdCad).toEqual({ rate: 1.4, asOf: '2026-11-06' })
+    expect(account.balance).toBeCloseTo(2800, 6)
     expect(account.type === 'STOCK' && account.holdings[0].lastQuote?.currency).toBe('USD')
     // The plan (with its quote) still validates and round-trips.
     expect(planSchema.safeParse(JSON.parse(JSON.stringify(plan))).success).toBe(true)
@@ -108,9 +121,35 @@ describe('refreshing a portfolio', () => {
     plan = addHolding(plan, 'stk', { ...newHolding('h1'), symbol: 'ACME', shares: 300 })
     plan = patchHolding(plan, 'stk', 'h1', { rsuGrants: [{ id: 'g', shares: 200, vestAt: { kind: 'year', year: 2027 } }] })
     const account = plan.accounts.find(a => a.id === 'stk')!
-    // Only vested shares count in the balance.
-    expect(account.balance).toBe(300 * 50)
+    // Only vested shares count in the balance, in CAD.
+    expect(account.balance).toBeCloseTo(300 * 50 * plan.assumptions.usdCad.rate, 6)
     expect(account.type === 'STOCK' && account.holdings[0].rsuGrants[0].shares).toBe(200)
+  })
+
+  it('revalues stock accounts when the exchange rate changes', () => {
+    let plan = createDefaultPlan(new Date('2026-06-01'))
+    plan = addAccount(plan, plan.people[0].id, 'STOCK', 'stk')
+    plan = addHolding(plan, 'stk', { ...newHolding('h1'), shares: 10, priceUsd: 12.5 })
+    plan = setUsdCad(plan, 1.3)
+    expect(plan.accounts.find(a => a.id === 'stk')!.balance).toBeCloseTo(162.5, 6)
+    expect(plan.assumptions.usdCad.asOf).toBeUndefined()
+  })
+
+  it('migrates plans that stored the share price in CAD', () => {
+    const base = JSON.parse(JSON.stringify(addAccount(createDefaultPlan(new Date('2026-06-01')), 'x', 'STOCK', 'stk')))
+    base.accounts = base.accounts.filter((a: { id: string }) => a.id === 'stk')
+    base.accounts[0].ownerId = base.people[0].id
+    const legacy = (h: object) => ({ id: 'h', symbol: 'ACME', shares: 10, ...h })
+    base.accounts[0].holdings = [
+      legacy({ id: 'cad', price: 138, costPerShare: 90 }),
+      legacy({ id: 'usd', price: 280, lastQuote: { price: 200, currency: 'USD', fxToCad: 1.4, asOf: 'x', fetchedAt: 'x', source: 'x' } }),
+    ]
+    delete base.assumptions.usdCad
+    const result = parsePlanData(base, { now: new Date('2026-06-01') })
+    expect(result.success).toBe(true)
+    const holdings = result.success && result.plan.accounts[0].type === 'STOCK' ? result.plan.accounts[0].holdings : []
+    expect(holdings[0]).toMatchObject({ priceUsd: 100, costPerShare: 90 })
+    expect(holdings[1].priceUsd).toBe(200)
   })
 
   it('treats quotes fetched before today as stale', () => {

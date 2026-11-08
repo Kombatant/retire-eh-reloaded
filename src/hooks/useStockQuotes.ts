@@ -1,8 +1,9 @@
 import { useEffect, useSyncExternalStore } from 'react'
 import { usePlanStore } from '@/contexts/PlanStoreContext'
 import type { PlanV2 } from '@/lib/plan/schema'
-import { applyQuotes } from '@/lib/plan/edits'
+import { applyQuotes, setUsdCad } from '@/lib/plan/edits'
 import {
+  fetchUsdCad,
   isStale,
   loadMarketDataSettings,
   refreshQuotes,
@@ -15,11 +16,12 @@ import {
 interface QuoteStatus {
   refreshing: boolean
   errors: Record<string, string>
+  rateError: string | null
   lastRun: string | null
   settings: MarketDataSettings
 }
 
-let status: QuoteStatus = { refreshing: false, errors: {}, lastRun: null, settings: loadMarketDataSettings() }
+let status: QuoteStatus = { refreshing: false, errors: {}, rateError: null, lastRun: null, settings: loadMarketDataSettings() }
 const listeners = new Set<() => void>()
 const subscribe = (listener: () => void) => {
   listeners.add(listener)
@@ -47,8 +49,21 @@ async function runRefresh(plan: PlanV2, update: (fn: (p: PlanV2) => PlanV2) => v
   setStatus({ refreshing: true })
   const result = await refreshQuotes(symbols, provider, apiKey)
   const fetchedAt = new Date().toISOString()
-  if (Object.keys(result.prices).length > 0) update(p => applyQuotes(p, result.prices, fetchedAt))
-  setStatus({ refreshing: false, errors: result.errors, lastRun: fetchedAt })
+  if (result.usdCad || Object.keys(result.prices).length > 0) update(p => applyQuotes(p, result.prices, fetchedAt, result.usdCad))
+  setStatus({ refreshing: false, errors: result.errors, rateError: null, lastRun: fetchedAt })
+}
+
+// The exchange rate alone: the Bank of Canada needs no API key.
+async function runRateRefresh(update: (fn: (p: PlanV2) => PlanV2) => void) {
+  if (status.refreshing) return
+  setStatus({ refreshing: true })
+  try {
+    const { rate, asOf } = await fetchUsdCad()
+    update(p => setUsdCad(p, rate, asOf))
+    setStatus({ refreshing: false, rateError: null })
+  } catch (error) {
+    setStatus({ refreshing: false, rateError: error instanceof Error ? error.message : 'Could not get the exchange rate.' })
+  }
 }
 
 export function useStockQuotes() {
@@ -57,6 +72,7 @@ export function useStockQuotes() {
   return {
     ...state,
     refresh: () => runRefresh(activePlan, updateActivePlan),
+    refreshRate: () => runRateRefresh(updateActivePlan),
     setSettings: (patch: Partial<MarketDataSettings>) => {
       const settings = { ...status.settings, ...patch }
       saveMarketDataSettings(settings)

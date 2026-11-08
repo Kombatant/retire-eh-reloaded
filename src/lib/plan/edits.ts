@@ -12,6 +12,7 @@ import {
   type PersonV2,
   type PlanV2,
 } from './schema'
+import { stockValueCad } from './accountGroups'
 import { createDefaultPerson } from './defaults'
 import { newId } from './ids'
 import { detachPersonTimePoints, youngestPerson } from './time'
@@ -377,14 +378,24 @@ function updateStockAccount(plan: PlanV2, accountId: string, update: (a: StockAc
     accounts: plan.accounts.map(a => {
       if (a.id !== accountId || a.type !== 'STOCK') return a
       const next = update(a)
-      return { ...next, balance: next.holdings.reduce((s, h) => s + h.shares * h.price, 0) }
+      return { ...next, balance: stockValueCad(next.holdings, plan.assumptions.usdCad.rate) }
     }),
+  }
+}
+
+// Changing the rate revalues every stock account.
+export function setUsdCad(plan: PlanV2, rate: number, asOf?: string): PlanV2 {
+  if (!(rate > 0)) return plan
+  return {
+    ...plan,
+    assumptions: { ...plan.assumptions, usdCad: { rate, asOf } },
+    accounts: plan.accounts.map(a => (a.type === 'STOCK' ? { ...a, balance: stockValueCad(a.holdings, rate) } : a)),
   }
 }
 
 export function newHolding(id: string = newId('holding')): Holding {
   return {
-    id, symbol: '', shares: 100, price: 50, dividendYieldPct: 0, dividendType: 'eligible',
+    id, symbol: '', shares: 100, priceUsd: 50, dividendYieldPct: 0, dividendType: 'eligible',
     growthPct: { bear: 0, base: 5, bull: 10 }, volatilityPct: 30, rsuGrants: [],
   }
 }
@@ -409,20 +420,22 @@ export function setStockScenario(plan: PlanV2, stockScenario: PlanV2['assumption
   return { ...plan, assumptions: { ...plan.assumptions, stockScenario } }
 }
 
-// Apply fetched quotes (already in CAD) to every holding with that symbol.
+// Apply fetched quotes (already converted to USD) to every holding with that
+// symbol, and the Bank of Canada USD→CAD rate fetched with them.
 export function applyQuotes(
   plan: PlanV2,
-  prices: Record<string, { price: number; currency: string; fxToCad: number; priceCad: number; asOf: string; source: string }>,
+  prices: Record<string, { price: number; currency: string; fxToCad: number; priceUsd: number; asOf: string; source: string }>,
   fetchedAt: string,
+  usdCad?: { rate: number; asOf?: string },
 ): PlanV2 {
-  let next = plan
+  let next = usdCad ? setUsdCad(plan, usdCad.rate, usdCad.asOf) : plan
   for (const account of plan.accounts) {
     if (account.type !== 'STOCK') continue
     for (const h of account.holdings) {
       const quote = prices[h.symbol.trim().toUpperCase()]
       if (!quote) continue
       next = patchHolding(next, account.id, h.id, {
-        price: Math.round(quote.priceCad * 100) / 100,
+        priceUsd: Math.round(quote.priceUsd * 10000) / 10000,
         lastQuote: { price: quote.price, currency: quote.currency, fxToCad: quote.fxToCad, asOf: quote.asOf, fetchedAt, source: quote.source },
       })
     }
