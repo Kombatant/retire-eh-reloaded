@@ -64,6 +64,17 @@ describe('App smoke test', () => {
     expect(screen.queryByText(/^Applied:/)).toBeNull()
   }, 30_000)
 
+  it('tries other retirement ages on the Proposals slider', async () => {
+    window.history.replaceState(null, '', '/#/proposals')
+    render(<App />)
+    const slider = await screen.findByRole('slider', { name: 'Retirement age to try' }, { timeout: 20_000 })
+    expect(screen.getByText('When it’s safest to retire')).toBeInTheDocument()
+    const next = Number((slider as HTMLInputElement).value) === 0 ? 1 : 0
+    fireEvent.change(slider, { target: { value: String(next) } })
+    expect((slider as HTMLInputElement).value).toBe(String(next))
+    expect(screen.queryByText(/Something went wrong/i)).toBeNull()
+  }, 30_000)
+
   it('opens the page named in the URL hash', () => {
     window.history.replaceState(null, '', '/#/learn')
     render(<App />)

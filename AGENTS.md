@@ -37,6 +37,7 @@ The application is 100% pure TypeScript (React + Vite). All calculations run cli
   - The page runs `runProposalJob` in its own Web Worker (`src/workers/proposals.worker.ts`) through `useProposals`.
   - Add a new lever by adding a `Change` kind, its `applyChange` and `describeChange` cases, and a candidate list.
   - The goal comes from `planGoalOutlook` (`src/lib/insights/outlook.ts`), which the Dashboard also uses through `usePlanOutlook`, so both give the same verdict.
+  - Retirement timing (`src/lib/insights/retirementTiming.ts`) scores a range of retirement ages the same way, in its own worker through `useRetirementTiming`. All ages are scored up front so the slider needs no recalculation. "Safe" means the success target and the goal are both met, at that age and the later ones.
 - **Original engine** (`src/lib/legacy/`): kept only as the reference for `src/test/sim-parity.test.ts`.
 
 ## GitHub Actions
@@ -76,7 +77,7 @@ A grouped sidebar (a drawer on small screens) with hash routes. Each page shows 
 | | Cash flow | `#/cashflow/<flow\|table>` | Yearly Sankey, year-by-year table with column presets and CSV export |
 | | Taxes | `#/taxes/<retirement\|by-year\|brackets>` | Tax at retirement, tax by year, bracket room |
 | | Risk | `#/risk/<monte-carlo\|historical\|stress>` | Success KPIs; fan chart, historical backtest, stress tests |
-| | Proposals | `#/proposals` | Changes tested against the current plan: best combination, free changes, trade-offs or room to spare; try as a new plan or apply with undo |
+| | Proposals | `#/proposals` | When it's safest to retire, with a slider to try other ages; changes tested against the current plan: best combination, free changes, trade-offs or room to spare; try as a new plan or apply with undo |
 | Tools | Compare | `#/compare` | 2–3 saved plans side by side |
 | | Tracking | `#/tracking` | Dated balance snapshots, actual vs. projected, rebaseline |
 | — | Learn | `#/learn/<topic>` | Methodology articles |
@@ -141,6 +142,7 @@ Provider order in `App.tsx`: ThemeProvider › ToastProvider › RouteProvider �
 - `audit-regressions`: scenarios the engine once got wrong (funding verdicts, one-time costs, annual returns, pension eligibility, payroll, LIF jurisdiction, room limits, past events, storage recovery, plan diagnostics).
 - `insights`, `outlook`: Sankey, CSV, FI metrics, milestones, comparison, brackets; goal outlook, income sources, money-lasts.
 - `proposals`: applying changes, which proposals are offered, and that a proposal's numbers match applying it.
+- `retirement-timing`: the range of ages tested, the earliest safe age, and that a tested age's numbers match applying it.
 - `cpp-history`: CPP/QPP estimate from work history.
 - `sim-stocks`, `stock-quotes`: stock holdings, RSU/ESPP, sell plans, scenarios, quote providers (mocked fetch).
 - `route`, `advanced-settings`, `ui-primitives`: hash routes, Essentials/Advanced detection, Sheet/SegmentedControl/SubTabs/NumberInput/Field.

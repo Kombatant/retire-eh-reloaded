@@ -145,7 +145,7 @@ export function applyChanges(plan: PlanV2, changes: Change[], nowYear: number): 
 
 // --- Describing changes -------------------------------------------------------
 
-function describeChange(change: Change): { title: string; detail: string } {
+export function describeChange(change: Change): { title: string; detail: string } {
   switch (change.kind) {
     case 'withdrawalOrder':
       return change.order === 'proRata'
@@ -275,22 +275,17 @@ function compareScores(a: PlanScore, b: PlanScore, focusOnSuccess: boolean): num
   return wealth(a) - wealth(b)
 }
 
-function meetsTarget(s: PlanScore, needGoal: boolean): boolean {
+export function meetsTarget(s: PlanScore, needGoal: boolean): boolean {
   return (s.successRate === null || s.successRate >= TARGET_SUCCESS) && (!needGoal || s.onTrack)
 }
 
 // --- The job ------------------------------------------------------------------
 
-export async function runProposalJob(
-  plan: PlanV2,
-  startYear: number,
-  onUpdate: (update: ProposalUpdate) => void,
-  opts: { maxRuns?: number; shouldStop?: () => boolean; yieldBetween?: () => Promise<void> } = {},
-): Promise<void> {
+// Scores variations of `plan`. Every candidate gets the plan's own simulated
+// markets, so any difference between two scores comes from the change.
+export function createScorer(plan: PlanV2, startYear: number, maxRuns = PROPOSAL_MAX_RUNS) {
   const settings = settingsFromPlan(plan)
-  const runs = Math.min(settings.runs, opts.maxRuns ?? PROPOSAL_MAX_RUNS)
-  let tested = 0
-
+  const runs = Math.min(settings.runs, maxRuns)
   const score = (candidate: PlanV2): PlanScore => {
     const c = compilePlan(candidate, { startYear })
     const result = simulate(c, deterministicPath(c.years, c.expectedReturnPct, c.inflationPct))
@@ -309,6 +304,17 @@ export async function runProposalJob(
       averageIncome: metrics.averageRetirementIncome,
     }
   }
+  return { score, runs }
+}
+
+export async function runProposalJob(
+  plan: PlanV2,
+  startYear: number,
+  onUpdate: (update: ProposalUpdate) => void,
+  opts: { maxRuns?: number; shouldStop?: () => boolean; yieldBetween?: () => Promise<void> } = {},
+): Promise<void> {
+  const { score, runs } = createScorer(plan, startYear, opts.maxRuns)
+  let tested = 0
 
   const base = score(plan)
   const focusOnSuccess = (base.successRate !== null && base.successRate < TARGET_SUCCESS) || !base.onTrack

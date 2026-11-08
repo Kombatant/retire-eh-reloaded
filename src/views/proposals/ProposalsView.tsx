@@ -16,22 +16,9 @@ import { Button } from '@/components/ui/Button'
 import { Stat } from '@/components/ui/Stat'
 import { Callout } from '@/components/ui/Callout'
 import { EmptyState } from '@/components/ui/EmptyState'
-
-const TARGET_PCT = Math.round(TARGET_SUCCESS * 100)
-const pct = (rate: number | null) => (rate === null ? 'n/a' : `${Math.round(rate * 100)}%`)
-
-interface DeltaView {
-  label: string
-  text: string
-  tone: 'good' | 'bad' | 'none'
-}
-
-// Direction is always in the words; the colour only adds to it.
-function moneyDelta(label: string, change: number, moreIsGood: boolean): DeltaView {
-  if (Math.abs(change) < 500) return { label, text: 'No change', tone: 'none' }
-  const more = change > 0
-  return { label, text: `${moneyCompact(Math.abs(change))} ${more ? 'more' : 'less'}`, tone: more === moreIsGood ? 'good' : 'bad' }
-}
+import { moneyDelta, pct, TARGET_PCT, TONE, type DeltaView } from './format'
+import { RetirementTimingCard } from './RetirementTimingCard'
+import { TestingProgress } from './TestingProgress'
 
 function deltas(base: PlanScore, s: PlanScore): DeltaView[] {
   const out: DeltaView[] = []
@@ -56,8 +43,6 @@ function deltas(base: PlanScore, s: PlanScore): DeltaView[] {
   out.push(moneyDelta('Yearly income after tax', s.averageIncome - base.averageIncome, true))
   return out
 }
-
-const TONE: Record<DeltaView['tone'], string> = { good: 'text-success', bad: 'text-danger', none: 'text-fg-secondary' }
 
 function ProposalBody({ proposal, base, onApply, onCopy }: {
   proposal: Proposal
@@ -172,17 +157,9 @@ export function ProposalsView() {
         </div>
       )}
 
-      {running && (
-        <div role="status" className="max-w-xl">
-          <div className="flex justify-between text-xs text-fg-muted">
-            <span>Testing changes to your plan…</span>
-            <span>{tested} tested</span>
-          </div>
-          <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-surface-muted" aria-hidden>
-            <div className="h-full rounded-full bg-accent" style={{ width: `${Math.round(progress * 100)}%` }} />
-          </div>
-        </div>
-      )}
+      <RetirementTimingCard onApply={apply} onCopy={copy} />
+
+      {running && <TestingProgress label="Testing changes to your plan…" detail={`${tested} tested`} progress={progress} />}
 
       {combo && shared && (
         <Card padding="lg">
