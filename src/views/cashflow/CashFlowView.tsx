@@ -206,7 +206,7 @@ function FlowCard({ index, onSelect }: { index: number; onSelect: (i: number) =>
 // Column presets keep the table readable: 15 columns at once is too many.
 const PRESETS = {
   summary: ['Year', 'Ages', 'Phase', 'Withdrawals', 'Tax', 'Spending', 'Portfolio (end)', 'Net worth (end)'],
-  income: ['Year', 'Ages', 'Employment', 'Pensions', 'CPP/QPP', 'OAS', 'GIS', 'Other income', 'Withdrawals'],
+  income: ['Year', 'Ages', 'Employment', 'RSUs & ESPP', 'Pensions', 'CPP/QPP', 'OAS', 'GIS', 'Other income', 'Withdrawals'],
   all: [...YEAR_TABLE_HEADERS],
 } as const
 type Preset = keyof typeof PRESETS

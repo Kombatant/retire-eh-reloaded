@@ -223,14 +223,33 @@ export function compilePlan(plan: PlanV2, { startYear, rules = 'v2' }: CompileOp
     return index
   }
 
+  // Where an RSU bonus lands: the chosen holding if this person owns it, else
+  // their first stock holding, else their non-registered account.
+  const rsuTarget = (stream: IncomeStream, owner: number): NonNullable<CompiledIncome['rsu']> => {
+    const owned = plan.accounts.flatMap((a, account) => (
+      a.type === 'STOCK' && accounts[account].ownerIndex === owner
+        ? a.holdings.map((h, i) => ({ id: h.id, account, holding: accounts[account].stock!.holdings[i].index }))
+        : []
+    ))
+    const target = owned.find(h => h.id === stream.rsu?.holdingId) ?? owned[0]
+    return {
+      incomeId: stream.id,
+      account: target?.account ?? depositAccountFor(owner),
+      holding: target?.holding ?? -1,
+      sellToCover: stream.rsu?.sellToCover ?? true,
+    }
+  }
+
   const incomes: CompiledIncome[] = plan.incomes.flatMap(stream => {
     const owner = personIndex.get(stream.ownerId)
     if (owner === undefined) return []
     const flow = incomeFlow(stream, offsetOf, years)
-    const deposit = rules === 'v2' && stream.frequency === 'oneTime' ? depositAccountFor(owner) : -1
+    const isRsu = stream.kind === 'rsu' && rules === 'v2'
+    const deposit = rules === 'v2' && stream.frequency === 'oneTime' && !isRsu ? depositAccountFor(owner) : -1
     const survivorFraction = stream.kind === 'dbPension' && rules === 'v2' ? (stream.db?.survivorPct ?? 60) / 100 : 0
     const compiled: CompiledIncome[] = [{
       personIndex: owner, kind: stream.kind, taxTreatment: stream.taxTreatment, flow, depositAccount: deposit, survivorFraction,
+      rsu: isRsu ? rsuTarget(stream, owner) : undefined,
     }]
     // A DB bridge benefit is paid on top of the lifetime pension until the
     // bridge end age (usually 65, when CPP/OAS start).
@@ -381,7 +400,8 @@ function expenseFlow(
     startOffset: start,
     endOffset: item.frequency === 'oneTime' ? start + 1 : offsetOf(item.to, years),
     amount: item.amount * multiplier,
-    basis: 'real',
+    // The simple-mode gift pot always prices one-time items in real terms.
+    basis: item.indexed || item.frequency === 'oneTime' ? 'real' : 'nominal',
     ratePct: item.realGrowthPct,
     everyN: item.frequency === 'everyNYears' ? (item.everyNYears ?? 1) : 1,
   }

@@ -17,6 +17,8 @@ export function buildSankeyData(row: YearRow, scale = 1): SankeyData {
     ['GIS', sum(p => p.gis)],
     ['Other income', row.otherIncome],
     ['Portfolio withdrawals', row.withdrawal],
+    // The tax on vesting shares is paid by selling some of them, not from cash.
+    ['Shares sold for tax', row.stockTaxWithheld],
   ]
   const inflow = sources.reduce((s, [, v]) => s + Math.max(0, v), 0)
 

@@ -109,6 +109,18 @@ export interface CompiledIncome {
   depositAccount: number
   // DB pensions: share that continues to a surviving spouse.
   survivorFraction: number
+  // RSU bonuses are paid in shares. Holding -1: the owner has no stock holding,
+  // so the value goes to their non-registered account instead.
+  rsu?: { incomeId: string; account: number; holding: number; sellToCover: boolean }
+}
+
+// One year's RSU bonus for one income stream, in that year's dollars.
+export interface RsuAward {
+  incomeId: string
+  value: number
+  price: number // projected price per share that year, CAD
+  shares: number
+  sharesKept: number // after selling to cover tax
 }
 
 export interface CompiledExpense {
@@ -276,6 +288,7 @@ export interface YearRow {
   // Vested RSU shares sold at once to pay their own tax (sell to cover).
   // Included in `tax`; this part is paid by the shares, not from cash.
   stockTaxWithheld: number
+  rsuAwards: RsuAward[]
   // Pension, CPP, OAS and GIS.
   guaranteedIncome: number
   grossIncome: number

@@ -16,18 +16,25 @@ import { TimePointPicker } from '@/components/ui/TimePointPicker'
 import { Badge } from '@/components/ui/Badge'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Advanced } from '@/components/ui/Advanced'
+import { Callout } from '@/components/ui/Callout'
+import { Checkbox } from '@/components/ui/Checkbox'
+import { useProjectionContext } from '@/contexts/ProjectionContext'
 
 const TEMPLATES: { key: IncomeTemplate; label: string }[] = [
   { key: 'salary', label: 'Salary' },
+  { key: 'cashBonus', label: 'Yearly cash bonus' },
+  { key: 'rsuBonus', label: 'Yearly RSU bonus' },
   { key: 'partTime', label: 'Part-time / semi-retirement' },
   { key: 'dbPension', label: 'Employer (DB) pension' },
   { key: 'rental', label: 'Rental income' },
-  { key: 'windfall', label: 'One-time (inheritance, bonus)' },
+  { key: 'windfall', label: 'One-time (inheritance, gift)' },
   { key: 'other', label: 'Other income' },
 ]
 
 const KIND_LABELS: Record<IncomeStream['kind'], string> = {
   employment: 'Employment',
+  bonus: 'Cash bonus',
+  rsu: 'RSU bonus',
   selfEmployment: 'Self-employment',
   rental: 'Rental',
   dbPension: 'DB pension',
@@ -55,7 +62,7 @@ export function IncomeSection() {
       <Card>
         <CardHeader
           title="Income sources"
-          description="Salaries, workplace pensions, rental income and one-time amounts. CPP and OAS are set under Household."
+          description="Salaries, bonuses, workplace pensions, rental income and one-time amounts. CPP and OAS are set under Household."
           actions={<AddMenu label="Add income" items={TEMPLATES.map(t => ({ key: t.key, label: t.label, onSelect: () => add(t.key) }))} />}
         />
         {activePlan.incomes.length === 0 ? (
@@ -114,6 +121,9 @@ function IncomeEditor({ income }: { income: IncomeStream }) {
   const update = (patch: Partial<IncomeStream>) => updateActivePlan(p => patchIncome(p, income.id, patch))
   const oneTime = income.frequency === 'oneTime'
   const db = income.db
+  const isRsu = income.kind === 'rsu'
+  const isBonus = isRsu || income.kind === 'bonus'
+  const investsLeftovers = activePlan.expenses.mode === 'detailed' && activePlan.expenses.surplusPolicy === 'save'
 
   return (
     <div className="space-y-6">
@@ -128,10 +138,28 @@ function IncomeEditor({ income }: { income: IncomeStream }) {
             </Select>
           </Field>
         )}
-        <Field label={oneTime ? 'Amount' : 'Amount per year'} hint="Before tax, in today's dollars.">
+        <Field
+          label={isRsu ? 'Typical value per year' : oneTime ? 'Amount' : 'Amount per year'}
+          hint={isRsu ? "Value of the shares when they vest, before tax, in today's Canadian dollars." : "Before tax, in today's dollars."}
+        >
           <NumberInput value={income.amount} min={0} onChange={(v) => update({ amount: v })} />
         </Field>
       </div>
+
+      {income.kind === 'bonus' && (
+        <div className="space-y-3">
+          <p className="text-xs text-fg-muted">
+            Counts as employment income in the year you receive it, on top of your salary. Employers often withhold a different amount from a bonus; that evens out when you file, so the plan uses your full-year tax.
+          </p>
+          {!investsLeftovers && (
+            <Callout>
+              This plan only invests the contributions you set under Savings, so the bonus adds tax but no savings on its own. Raise a contribution, or use a detailed budget with leftover cash invested.
+            </Callout>
+          )}
+        </div>
+      )}
+
+      {isRsu && <RsuBonusFields income={income} />}
 
       <div className="grid grid-cols-1 gap-4 border-t border-border pt-5">
         <Field label={oneTime ? 'Received' : 'Starts'}>
@@ -170,7 +198,7 @@ function IncomeEditor({ income }: { income: IncomeStream }) {
         </div>
       )}
 
-      <Advanced>
+      {!isBonus && <Advanced>
         <div className="grid grid-cols-1 gap-4 border-t border-border pt-5 sm:grid-cols-2">
           <Field label="Tax treatment">
             <Select value={income.taxTreatment} onChange={(e) => update({ taxTreatment: e.target.value as IncomeStream['taxTreatment'] })}>
@@ -210,7 +238,55 @@ function IncomeEditor({ income }: { income: IncomeStream }) {
             </>
           )}
         </div>
-      </Advanced>
+      </Advanced>}
+    </div>
+  )
+}
+
+function RsuBonusFields({ income }: { income: IncomeStream }) {
+  const { activePlan, updateActivePlan } = usePlanStore()
+  const { simulation } = useProjectionContext()
+  const rsu = income.rsu ?? { sellToCover: true }
+  const update = (patch: Partial<NonNullable<IncomeStream['rsu']>>) =>
+    updateActivePlan(p => patchIncome(p, income.id, { rsu: { ...rsu, ...patch } }))
+
+  const holdings = activePlan.accounts.flatMap(a => (
+    a.type === 'STOCK' && a.ownerId === income.ownerId
+      ? a.holdings.map(h => ({ id: h.id, label: `${h.symbol || 'Stock'} (${a.label || 'Stock account'})` }))
+      : []
+  ))
+  const selected = holdings.some(h => h.id === rsu.holdingId) ? rsu.holdingId : holdings[0]?.id
+  const firstVest = simulation.rows.flatMap(row => row.rsuAwards.filter(a => a.incomeId === income.id).map(award => ({ year: row.year, award })))[0]
+  const shares = (n: number) => Math.round(n).toLocaleString('en-CA')
+
+  return (
+    <div className="space-y-4 border-t border-border pt-5">
+      {holdings.length === 0 ? (
+        <Callout tone="warning" title="No stock to follow yet">
+          Add the stock as a holding under Savings to turn this value into shares at its projected price. Until then, the after-tax value goes to a non-registered account.
+        </Callout>
+      ) : (
+        <Field label="Stock" hint="The share count follows this holding's projected price in your selected bear, base or bull case.">
+          <Select value={selected} onChange={(e) => update({ holdingId: e.target.value })}>
+            {holdings.map(h => <option key={h.id} value={h.id}>{h.label}</option>)}
+          </Select>
+        </Field>
+      )}
+      <Checkbox
+        checked={rsu.sellToCover}
+        onChange={(sellToCover) => update({ sellToCover })}
+        label="Sell shares at vesting to pay the tax"
+        description="Keeps only the after-tax shares. Off keeps every share and pays the tax from cash."
+      />
+      {firstVest && (
+        <p className="text-sm text-fg-secondary">
+          {firstVest.year}: {money(firstVest.award.value)} at about {money(firstVest.award.price)} a share is {shares(firstVest.award.shares)} shares
+          {rsu.sellToCover && <>, about {shares(firstVest.award.sharesKept)} after tax</>}. Future Canadian dollars.
+        </p>
+      )}
+      <p className="text-xs text-fg-muted">
+        Counts as employment income in the year it vests. If you also listed these vests as tranches on the holding, remove them so they aren't counted twice.
+      </p>
     </div>
   )
 }

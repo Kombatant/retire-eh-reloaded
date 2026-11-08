@@ -121,6 +121,47 @@ describe('detailed spending', () => {
     expect(row.withdrawal + row.guaranteedIncome).toBeGreaterThan(row.spending + row.tax - 1)
   })
 
+  describe('adjusting for inflation', () => {
+    const withItems = (items: object[]) => {
+      const base = retiree('TFSA')
+      return planSchema.parse({ ...base, expenses: { ...base.expenses, items } })
+    }
+    const inflating = { ...flat, inflationPct: 3 }
+
+    it('indexes expenses to inflation by default', () => {
+      const rows = simulatePlan(retiree('TFSA'), inflating).result.rows
+      expect(rows[1].spending).toBeCloseTo(60000 * 1.03, 6)
+    })
+
+    it('holds a non-indexed expense at its dollar amount while others rise', () => {
+      const rows = simulatePlan(withItems([
+        { id: 'living', amount: 50000 },
+        { id: 'lease', amount: 10000, indexed: false },
+      ]), inflating).result.rows
+      expect(rows[0].spending).toBeCloseTo(60000, 6)
+      expect(rows[10].spending).toBeCloseTo(50000 * Math.pow(1.03, 10) + 10000, 6)
+    })
+
+    it('funds the lower spending with smaller withdrawals', () => {
+      const indexed = simulatePlan(withItems([{ id: 'x', amount: 60000 }]), inflating).result.rows
+      const fixed = simulatePlan(withItems([{ id: 'x', amount: 60000, indexed: false }]), inflating).result.rows
+      expect(fixed[10].withdrawal).toBeLessThan(indexed[10].withdrawal)
+    })
+
+    it('treats growth on a non-indexed expense as the whole yearly change', () => {
+      const rows = simulatePlan(withItems([{ id: 'x', amount: 10000, indexed: false, realGrowthPct: 2 }]), inflating).result.rows
+      expect(rows[1].spending).toBeCloseTo(10200, 6)
+    })
+
+    it('keeps one-time expenses in real dollars even when marked non-indexed', () => {
+      const rows = simulatePlan(withItems([
+        { id: 'gift', amount: 10000, frequency: 'oneTime', indexed: false, from: { kind: 'age', personId: 'a', age: 70 } },
+      ]), inflating).result.rows
+      const year = rows.findIndex(r => r.people[0].age === 70)
+      expect(rows[year].spending).toBeCloseTo(10000 * Math.pow(1.03, year), 6)
+    })
+  })
+
   it('cuts discretionary spending in a slow-go phase', () => {
     const base = retiree('TFSA')
     const withPhase = { ...base, expenses: { ...base.expenses, phases: [{ id: 'slow', name: 'Slow-go', from: { kind: 'age' as const, personId: 'a', age: 75 }, discretionaryMultiplierPct: 50 }] } }

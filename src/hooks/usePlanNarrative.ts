@@ -1,4 +1,5 @@
 import { usePeople } from '@/contexts/PeopleContext'
+import { usePlanStore } from '@/contexts/PlanStoreContext'
 import { useAssumptions } from '@/contexts/AssumptionsContext'
 import { useProjectionContext } from '@/contexts/ProjectionContext'
 import { useRetirementGoal } from '@/hooks/useRetirementGoal'
@@ -7,6 +8,7 @@ import { jurisdictionLabel } from '@/lib/tax'
 
 export function usePlanNarrative() {
   const { people } = usePeople()
+  const { activePlan } = usePlanStore()
   const assumptions = useAssumptions()
   const projection = useProjectionContext()
 
@@ -15,10 +17,9 @@ export function usePlanNarrative() {
 
   const goal = useRetirementGoal({
     currentProjectionData: projection.currentProjectionData,
-    annualIncome: projection.totalAnnualIncome,
+    annualSpendingTarget: projection.retirementSpendingTarget,
     annualPension: totalGuaranteedPension,
     guaranteedIncomeSchedule: projection.guaranteedIncomeSchedule,
-    replacementRate: assumptions.replacementRate,
     withdrawalRate: assumptions.withdrawalRate,
     yearsToRetirement: projection.yearsToRetirement,
     expectedReturn: assumptions.expectedReturn,
@@ -54,6 +55,7 @@ export function usePlanNarrative() {
     yearsToRetirement: projection.yearsToRetirement,
     expectedReturn: assumptions.expectedReturn,
     inflationRate: assumptions.inflationRate,
+    spendingMode: activePlan.expenses.mode,
     replacementRate: assumptions.replacementRate,
     withdrawalRate: assumptions.withdrawalRate,
     showRealValues: assumptions.showRealValues,

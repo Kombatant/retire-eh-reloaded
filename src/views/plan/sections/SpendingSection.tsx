@@ -55,14 +55,14 @@ export function SpendingSection() {
 
   const addRecurring = () => {
     const id = newId('expense')
-    updateActivePlan(p => addExpenseItem(p, { id, label: 'New expense', category: 'general', amount: 5000, frequency: 'annual', essential: true, realGrowthPct: 0 }))
+    updateActivePlan(p => addExpenseItem(p, { id, label: 'New expense', category: 'general', amount: 5000, frequency: 'annual', essential: true, indexed: true, realGrowthPct: 0 }))
     setEditingId(id)
   }
   const addOneTime = () => {
     const id = newId('expense')
     updateActivePlan(p => addExpenseItem(p, {
       id, label: 'Gift to kids', category: GIFT_CATEGORY, amount: 50000,
-      frequency: 'oneTime', from: { kind: 'age', personId: anchorId, age: 65 }, essential: false, realGrowthPct: 0,
+      frequency: 'oneTime', from: { kind: 'age', personId: anchorId, age: 65 }, essential: false, indexed: true, realGrowthPct: 0,
     }))
     setEditingId(id)
   }
@@ -76,7 +76,7 @@ export function SpendingSection() {
         ? describeTimePoint(item.from, activePlan.people, 'Now')
         : `${describeTimePoint(item.from, activePlan.people, 'Now')} → ${describeTimePoint(item.to, activePlan.people, 'End of plan')}`}
       value={money(item.amount)}
-      valueSub={item.frequency === 'everyNYears' ? `every ${item.everyNYears ?? 1} yrs` : FREQUENCY_LABEL[item.frequency]}
+      valueSub={`${item.frequency === 'everyNYears' ? `every ${item.everyNYears ?? 1} yrs` : FREQUENCY_LABEL[item.frequency]}${item.frequency !== 'oneTime' && !item.indexed ? ', fixed $' : ''}`}
       onOpen={() => setEditingId(item.id)}
       openLabel={`Edit ${item.label}`}
       onRemove={() => updateActivePlan(p => removeExpenseItem(p, item.id))}
@@ -163,10 +163,11 @@ export function SpendingSection() {
 }
 
 function ExpenseEditor({ item, anchorId }: { item: ExpenseItem; anchorId: string }) {
-  const { updateActivePlan, nowYear } = usePlanStore()
+  const { activePlan, updateActivePlan, nowYear } = usePlanStore()
   const { isAdvanced } = useDetailLevel()
   const patch = (p: Partial<ExpenseItem>) => updateActivePlan(plan => patchExpenseItem(plan, item.id, p))
   const oneTime = item.frequency === 'oneTime'
+  const fixedDollars = !oneTime && !item.indexed
 
   return (
     <div className="space-y-6">
@@ -174,7 +175,7 @@ function ExpenseEditor({ item, anchorId }: { item: ExpenseItem; anchorId: string
         <Field label="What" className="sm:col-span-2">
           <TextInput value={item.label} onChange={(e) => patch({ label: e.target.value })} />
         </Field>
-        <Field label="Amount" hint="In today's dollars.">
+        <Field label="Amount" hint={fixedDollars ? 'The exact dollars you will pay each time.' : "In today's dollars."}>
           <NumberInput value={item.amount} min={0} onChange={(v) => patch({ amount: v })} />
         </Field>
         {!oneTime && (
@@ -218,8 +219,21 @@ function ExpenseEditor({ item, anchorId }: { item: ExpenseItem; anchorId: string
             label="Essential"
             description="Essential spending is never cut by flexible withdrawal strategies."
           />
+          <Checkbox
+            checked={item.indexed}
+            onChange={(on) => patch({ indexed: on })}
+            label="Adjust for inflation"
+            description="The cost rises with inflation each year. Turn off for costs that stay at the same dollar amount, such as a fixed-rate payment."
+          />
+          {fixedDollars && activePlan.drawdown.strategy.kind !== 'expenses' && (
+            <p className="text-xs text-fg-muted">Retirement withdrawals follow your withdrawal strategy. To have them follow this budget, choose "Fund my spending" under Withdrawals.</p>
+          )}
           <Advanced>
-            <Field label="Growth above inflation" info="For costs that rise faster than prices in general, such as health care (1–2%)." className="w-48">
+            <Field
+              label={item.indexed ? 'Growth above inflation' : 'Yearly increase'}
+              info={item.indexed ? 'For costs that rise faster than prices in general, such as health care (1–2%).' : 'A set yearly change in this cost, in place of inflation.'}
+              className="w-48"
+            >
               <PercentInput value={item.realGrowthPct} onChange={(v) => patch({ realGrowthPct: v })} />
             </Field>
           </Advanced>

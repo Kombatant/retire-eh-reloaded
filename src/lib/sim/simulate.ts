@@ -13,7 +13,7 @@ import { amortizeYear } from './steps/debts'
 import { solveIncreasing } from './steps/solver'
 import { LIF_EARLIEST_AGE, lifMaximumFactor, rrifMinimumFactor } from './steps/rrif'
 import { strategyWithdrawal, type StrategyState } from './steps/spendingStrategy'
-import type { CompiledFlow, CompiledPlan, DrawdownSnapshot, EstateResult, MarketPath, PersonYear, SimResult, YearRow } from './types'
+import type { CompiledFlow, CompiledPlan, DrawdownSnapshot, EstateResult, MarketPath, PersonYear, RsuAward, SimResult, YearRow } from './types'
 
 const DIVIDEND_GROSS_UP = 1 + TAX_2026.federal.eligibleDividendGrossUp
 const LIMITS = TAX_2026.limits
@@ -77,12 +77,14 @@ function bucketIncomes(c: CompiledPlan, cpi: Float64Array, inflation: Float64Arr
     deposited: new Float64Array(years),
   }))
   for (const income of c.incomes) {
+    // Paid in shares, not cash: handled with the other stock compensation.
+    if (income.kind === 'rsu') continue
     const series = flowSeries(income.flow, cpi, inflation)
     const b = buckets[income.personIndex]
     if (income.taxTreatment === 'nonTaxable') addInto(b.nonTaxable, series)
     else if (income.taxTreatment === 'capitalGain') addInto(b.capitalGains, series)
     else if (income.taxTreatment === 'eligibleDividend') addInto(b.eligibleDividends, series)
-    else if (income.kind === 'employment' || income.kind === 'selfEmployment') addInto(b.employment, series)
+    else if (income.kind === 'employment' || income.kind === 'bonus' || income.kind === 'selfEmployment') addInto(b.employment, series)
     else if (income.kind === 'dbPension' || income.kind === 'annuity') addInto(b.pension, series)
     else addInto(b.otherOrdinary, series)
     if (income.depositAccount >= 0) {
@@ -154,6 +156,9 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
   })
   const depositSeries = c.accounts.map(() => new Float64Array(years))
   const incomeByPerson = bucketIncomes(c, cpi, path.inflation, depositSeries)
+  const rsuBonuses = c.incomes.flatMap(i => (i.rsu
+    ? [{ ...i.rsu, employee: i.personIndex, series: flowSeries(i.flow, cpi, path.inflation) }]
+    : []))
 
   // Spending series (detailed mode) and the simple-mode reserved gift pot.
   const essentialSpending = new Float64Array(years)
@@ -345,6 +350,7 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
       stockSales: 0,
       stockCompensation: 0,
       stockTaxWithheld: 0,
+      rsuAwards: [],
       guaranteedIncome: 0,
       grossIncome: 0,
       afterTaxIncome: 0,
@@ -482,7 +488,7 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
     // employment income paid in shares, and becomes the cost base. Unvested
     // grants and ESPP stop if the employee has died.
     let esppCash = 0
-    const sellToCover: { a: number; holding: number; employee: number; value: number }[] = []
+    const sellToCover: { a: number; holding: number; employee: number; value: number; award?: RsuAward }[] = []
     for (const a of stockAccounts) {
       const employee = c.accounts[a].ownerIndex
       const employed = v2 && employee >= 0 && alive[employee]
@@ -516,6 +522,25 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
       }
     }
     row.contributions += esppCash
+
+    // RSU bonuses are a dollar value, so a higher projected price means fewer
+    // shares for the same award. Taxed like any other vest.
+    for (const bonus of rsuBonuses) {
+      const value = bonus.series[t]
+      if (value <= 0 || !alive[bonus.employee]) continue
+      const { account: a, holding, employee } = bonus
+      if (holding >= 0) holdingValue[holding] += value
+      balances[a] += value
+      acb[a] += value
+      peopleYear[employee].stockCompensation += value
+      row.stockCompensation += value
+      const price = holding >= 0 ? holdingPrice[holding] : 0
+      const award: RsuAward | undefined = price > 0
+        ? { incomeId: bonus.incomeId, value, price, shares: value / price, sharesKept: value / price }
+        : undefined
+      if (award) row.rsuAwards.push(award)
+      if (bonus.sellToCover) sellToCover.push({ a, holding, employee, value, award })
+    }
 
     // Property sales happen at the start of the year: repay the mortgage,
     // buy any replacement home, invest the rest.
@@ -679,9 +704,10 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
         const due = Math.min(value, Math.max(0, (full.total + payroll(full) - without.total - payroll(without)) * k))
         for (const v of vests) {
           const sold = due * (v.value / value)
-          holdingValue[v.holding] -= sold
+          if (v.holding >= 0) holdingValue[v.holding] -= sold
           balances[v.a] -= sold
           acb[v.a] -= sold
+          if (v.award) v.award.sharesKept -= sold / v.award.price
         }
         withheld += due
       }
@@ -977,7 +1003,8 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
     for (let i = 0; i < peopleCount; i++) {
       if (!Number.isNaN(rrspRoom[i])) {
         if (t > 0) {
-          const priorEarnings = incomeByPerson[i].employment[t - 1]
+          // Vested shares are on the T4, so they earn RRSP room like salary.
+          const priorEarnings = incomeByPerson[i].employment[t - 1] + rows[t - 1].people[i].stockCompensation
           rrspRoom[i] += Math.min(LIMITS.rrspRate * priorEarnings, LIMITS.rrspMax * k)
         }
         rrspRoom[i] -= contributedTo.rrsp[i]

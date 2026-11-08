@@ -94,7 +94,7 @@ function StatusHero() {
           <p className="mt-1 text-sm text-fg-secondary">
             From age {o.retirementAge}, your plan provides <span className="font-medium text-fg">{money(o.outlook.preTaxIncome)}</span> a year
             before tax (<span className="font-medium text-fg">{money(o.outlook.afterTaxIncome)}</span> after tax). Your goal is{' '}
-            <span className="font-medium text-fg">{money(target)}</span> before tax.
+            <span className="font-medium text-fg">{money(target)}</span> {o.goalIsAfterTax ? 'after tax' : 'before tax'}.
           </p>
           <div className="mt-4 max-w-xl">
             <div className="flex justify-between text-xs text-fg-muted">

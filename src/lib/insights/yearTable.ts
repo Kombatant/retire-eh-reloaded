@@ -2,7 +2,7 @@ import type { CompiledPlan, SimResult } from '@/lib/sim/types'
 import type { CsvValue } from './csv'
 
 export const YEAR_TABLE_HEADERS = [
-  'Year', 'Ages', 'Phase', 'Employment', 'Pensions', 'CPP/QPP', 'OAS', 'GIS', 'Other income',
+  'Year', 'Ages', 'Phase', 'Employment', 'RSUs & ESPP', 'Pensions', 'CPP/QPP', 'OAS', 'GIS', 'Other income',
   'Withdrawals', 'Tax', 'Spending', 'Contributions', 'Portfolio (end)', 'Net worth (end)',
 ]
 
@@ -17,6 +17,7 @@ export function buildYearTable(c: CompiledPlan, result: SimResult, showRealValue
       row.people.map((p, i) => (p.alive ? `${c.people[i].name} ${p.age}` : null)).filter(Boolean).join(' / '),
       row.phase === 'drawdown' ? 'Retired' : 'Working',
       sum(p => p.employment),
+      sum(p => p.stockCompensation),
       sum(p => p.pension),
       sum(p => p.cpp),
       sum(p => p.oas),

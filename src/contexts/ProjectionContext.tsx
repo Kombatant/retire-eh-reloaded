@@ -16,6 +16,7 @@ import {
 import { buildGuaranteedIncomeSchedule, getCppIncomeAtAge, getOasIncomeAtAge } from '@/lib/calculations'
 import { OAS_MAX_ANNUAL_2026 } from '@/lib/tax'
 import { buildRetirementTaxSnapshot, type RetirementTaxSnapshot } from '@/lib/sim/taxSnapshot'
+import { retirementSpendingTarget as spendingTargetOf } from '@/lib/insights/outlook'
 import type { ProjectionDataPoint } from '@/types/projection'
 
 interface ProjectionContextValueTyped {
@@ -35,6 +36,7 @@ interface ProjectionContextValueTyped {
   yearsToRetirement: number
   minCurrentAge: number
   totalAnnualIncome: number
+  retirementSpendingTarget: number
   totalAnnualPension: number
   totalAnnualCpp: number
   totalAnnualOas: number
@@ -67,6 +69,7 @@ export function ProjectionProvider({ children }: { children: ReactNode }) {
   const yearsToRetirement = people.length ? compiledPlan.drawdownStartOffset : 0
   const householdRetirementAge = minCurrentAge + yearsToRetirement
   const totalAnnualIncome = people.reduce((sum, p) => sum + (p.annualIncome || 0), 0)
+  const retirementSpendingTarget = spendingTargetOf(compiledPlan, simulation)
   const totalAnnualPension = people.reduce((sum, p) => sum + (p.annualPension || 0), 0)
   const totalAnnualCpp = people.reduce((sum, p) => {
     const ageAtHouseholdRetirement = p.currentAge + yearsToRetirement
@@ -117,7 +120,7 @@ export function ProjectionProvider({ children }: { children: ReactNode }) {
       projectionData, conservativeProjectionData, optimisticProjectionData,
       realProjectionData, currentProjectionData: projectionData,
       householdRetirementAge, yearsToRetirement, minCurrentAge,
-      totalAnnualIncome, totalAnnualPension, totalAnnualCpp, totalAnnualOas,
+      totalAnnualIncome, retirementSpendingTarget, totalAnnualPension, totalAnnualCpp, totalAnnualOas,
       guaranteedIncomeSchedule, totalPortfolio, totalAnnualContributions, retirementTax,
     }}>
       {children}

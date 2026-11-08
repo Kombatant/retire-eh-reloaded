@@ -3,6 +3,8 @@ import { render, screen, fireEvent, within } from '@testing-library/react'
 import App from '@/App'
 import { buildShareUrl } from '@/lib/share-link'
 import { createDefaultPlan } from '@/lib/plan/defaults'
+import { newIncome } from '@/lib/plan/edits'
+import { accountSchema } from '@/lib/plan/schema'
 
 // Recharts and the theme provider rely on browser APIs jsdom does not provide.
 beforeAll(() => {
@@ -112,5 +114,35 @@ describe('App smoke test', () => {
     const nav = screen.getByRole('navigation', { name: 'Main' })
     expect(within(nav).getByText('Dashboard').closest('a')).toHaveAttribute('aria-current', 'page')
     expect(window.location.hash).toBe('#/dashboard')
+  })
+
+  it('adds an RSU bonus and asks for a stock when there is none', () => {
+    window.history.replaceState(null, '', '/#/plan/income')
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: /Add income/ }))
+    fireEvent.click(screen.getByText('Yearly RSU bonus'))
+    expect(screen.getByText('Typical value per year')).toBeInTheDocument()
+    expect(screen.getByText('No stock to follow yet')).toBeInTheDocument()
+    expect(screen.queryByText(/Something went wrong/i)).toBeNull()
+  })
+
+  it('shows the shares an RSU bonus buys at the projected price', () => {
+    const shared = createDefaultPlan(new Date(2026, 0, 1), 'Stock plan')
+    const owner = shared.people[0].id
+    shared.accounts.push(accountSchema.parse({
+      id: 'stock', ownerId: owner, type: 'STOCK', balance: 0, label: 'Work shares',
+      holdings: [{ id: 'h', symbol: 'ACME', shares: 10, priceUsd: 100 }],
+    }))
+    shared.incomes.push(newIncome('rsuBonus', owner, 'rsu-income'))
+    window.history.replaceState(null, '', new URL(buildShareUrl(shared, 'http://localhost/')).hash || '/')
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: 'Load shared plan' }))
+    const nav = screen.getByRole('navigation', { name: 'Main' })
+    fireEvent.click(within(nav).getByText('Plan'))
+    fireEvent.click(within(nav).getByText('Income'))
+    fireEvent.click(screen.getByRole('button', { name: 'Edit RSU bonus' }))
+    expect(screen.getByRole('option', { name: 'ACME (Work shares)' })).toBeInTheDocument()
+    expect(screen.getByText(/shares, about [\d,\s]+ after tax/)).toBeInTheDocument()
+    expect(screen.queryByText(/Something went wrong/i)).toBeNull()
   })
 })

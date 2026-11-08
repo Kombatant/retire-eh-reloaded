@@ -77,6 +77,15 @@ export function retirementIncomeSources(input: {
   return sources.filter(s => s.amount > 0)
 }
 
+// The goal in both spending modes: what the plan itself spends in its first
+// retirement year, in today's dollars. Simple mode gives the replacement target
+// (pre-tax income); detailed mode gives the budget with property costs and any
+// debt still being repaid (after-tax money).
+export function retirementSpendingTarget(c: CompiledPlan, result: SimResult): number {
+  const row = result.rows[c.drawdownStartOffset]
+  return row ? row.spending / row.cpi : 0
+}
+
 export interface MoneyLasts {
   // True when savings last until the end of the plan.
   wholePlan: boolean

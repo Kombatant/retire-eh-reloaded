@@ -74,10 +74,9 @@ function goalFor(
 ) {
   return calculateRetirementGoal({
     currentProjectionData: data,
-    annualIncome: 230000,
+    annualSpendingTarget: 138000,
     annualPension,
     guaranteedIncomeSchedule,
-    replacementRate: 60,
     withdrawalRate: 4,
     yearsToRetirement,
     expectedReturn: 7,
@@ -194,9 +193,8 @@ describe('goal: delayed CPP and OAS', () => {
     const data = buildCombinedProjection([person], 7, 2.5, true, 65, 30, false)
     const base = {
       currentProjectionData: data,
-      annualIncome: 100000,
+      annualSpendingTarget: 70000,
       annualPension: 0,
-      replacementRate: 70,
       withdrawalRate: 4,
       yearsToRetirement: 5,
       expectedReturn: 7,

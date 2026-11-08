@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { retirementOutlook, moneyLasts, retirementIncomeSources } from '@/lib/insights/outlook'
+import { retirementOutlook, moneyLasts, retirementIncomeSources, retirementSpendingTarget } from '@/lib/insights/outlook'
+import { calculateRetirementGoal } from '@/lib/calculations'
+import type { PlanV2 } from '@/lib/plan/schema'
 import { createDefaultPlan } from '@/lib/plan/defaults'
 import { simulatePlan } from '@/lib/sim'
 import type { RetirementGoalResult } from '@/lib/calculations'
@@ -63,6 +65,58 @@ describe('retirementIncomeSources', () => {
     const [withdrawal, cpp] = retirementIncomeSources({ ...base, showRealValues: false })
     expect(withdrawal.amount).toBe(40_000)
     expect(cpp.amount).toBeCloseTo(15_000 * Math.pow(1.02, 10), 6)
+  })
+})
+
+describe('retirementSpendingTarget', () => {
+  const withSalary = (plan: PlanV2, amount: number): PlanV2 => ({
+    ...plan,
+    incomes: [{
+      id: 'salary', ownerId: plan.people[0].id, label: 'Salary', kind: 'employment', amount, frequency: 'annual',
+      to: { kind: 'retirement', personId: plan.people[0].id, offset: 0 },
+      growth: { kind: 'cpi', pct: 0 }, taxTreatment: 'ordinary',
+    }],
+  })
+  const simple = (salary: number): PlanV2 => {
+    const plan = createDefaultPlan(new Date(2026, 0, 1))
+    return withSalary({ ...plan, expenses: { ...plan.expenses, mode: 'simple', replacementRate: 50 } }, salary)
+  }
+  const detailed = (salary: number): PlanV2 => {
+    const plan = createDefaultPlan(new Date(2026, 0, 1))
+    return withSalary({
+      ...plan,
+      expenses: {
+        ...plan.expenses,
+        mode: 'detailed',
+        replacementRate: 50,
+        phases: [],
+        items: [{ id: 'living', label: 'Living', category: 'living', amount: 89_000, frequency: 'annual', essential: true, indexed: true, realGrowthPct: 0 }],
+      },
+      properties: [{ id: 'home', ownerId: 'joint', label: 'Home', value: 1_000_000, appreciationRealPct: 0, isPrincipalResidence: true, annualCosts: 7_000 }],
+    }, salary)
+  }
+  const target = (plan: PlanV2) => {
+    const { compiled, result } = simulatePlan(plan, { startYear: 2026 })
+    return retirementSpendingTarget(compiled, result)
+  }
+
+  it('is the budget plus home costs in detailed mode, whatever the salary', () => {
+    expect(target(detailed(158_000))).toBeCloseTo(96_000, 6)
+    expect(target(detailed(247_000))).toBeCloseTo(96_000, 6)
+  })
+
+  it('is the replacement share of salary in simple mode', () => {
+    expect(target(simple(100_000))).toBeCloseTo(50_000, 6)
+  })
+
+  it('counts a goal that guaranteed income fully covers as met', () => {
+    const goalResult = calculateRetirementGoal({
+      currentProjectionData: [], annualSpendingTarget: 20_000, annualPension: 30_000, withdrawalRate: 4,
+      yearsToRetirement: 10, expectedReturn: 7, inflationRate: 2, currentAnnualContributions: 0, currentPortfolio: 0,
+    })
+    expect(goalResult.requiredPortfolio).toBe(0)
+    expect(goalResult.progress).toBe(100)
+    expect(goalResult.afterTaxProgress).toBe(100)
   })
 })
 

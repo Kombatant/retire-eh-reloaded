@@ -164,6 +164,7 @@ function giftToItem(plan: PlanV2, gift: Pick<PlannedGift, 'id' | 'label' | 'amou
     frequency: 'oneTime',
     from: youngest ? { kind: 'age', personId: youngest.id, age: gift.age } : { kind: 'now' },
     essential: false,
+    indexed: true,
     realGrowthPct: 0,
   }
 }
@@ -242,7 +243,7 @@ export function setAccountContributionRule(
   }
 }
 
-export type IncomeTemplate = 'salary' | 'partTime' | 'dbPension' | 'rental' | 'windfall' | 'other'
+export type IncomeTemplate = 'salary' | 'cashBonus' | 'rsuBonus' | 'partTime' | 'dbPension' | 'rental' | 'windfall' | 'other'
 
 export function newIncome(template: IncomeTemplate, ownerId: string, id: string = newId('income')): IncomeStream {
   const base = {
@@ -253,6 +254,10 @@ export function newIncome(template: IncomeTemplate, ownerId: string, id: string 
   switch (template) {
     case 'salary':
       return { ...base, kind: 'employment', label: 'Salary', amount: 60000, to: retirement }
+    case 'cashBonus':
+      return { ...base, kind: 'bonus', label: 'Annual bonus', amount: 10000, to: retirement }
+    case 'rsuBonus':
+      return { ...base, kind: 'rsu', label: 'RSU bonus', amount: 20000, to: retirement, rsu: { sellToCover: true } }
     case 'partTime':
       return { ...base, kind: 'employment', label: 'Part-time work', amount: 25000, from: retirement, to: { ...retirement, offset: 5 } }
     case 'dbPension':
@@ -313,8 +318,8 @@ export function setExpenseMode(plan: PlanV2, mode: 'simple' | 'detailed', simple
     return patchExpenses(plan, {
       mode,
       items: [
-        { id: newId('expense'), label: 'Living expenses', category: 'living', amount: Math.round(simpleTargetToday * 0.8 / 1000) * 1000, frequency: 'annual', essential: true, realGrowthPct: 0 },
-        { id: newId('expense'), label: 'Travel & leisure', category: 'leisure', amount: Math.round(simpleTargetToday * 0.2 / 1000) * 1000, frequency: 'annual', essential: false, realGrowthPct: 0 },
+        { id: newId('expense'), label: 'Living expenses', category: 'living', amount: Math.round(simpleTargetToday * 0.8 / 1000) * 1000, frequency: 'annual', essential: true, indexed: true, realGrowthPct: 0 },
+        { id: newId('expense'), label: 'Travel & leisure', category: 'leisure', amount: Math.round(simpleTargetToday * 0.2 / 1000) * 1000, frequency: 'annual', essential: false, indexed: true, realGrowthPct: 0 },
         ...plan.expenses.items,
       ],
     })

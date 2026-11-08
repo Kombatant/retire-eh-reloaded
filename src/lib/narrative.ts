@@ -15,6 +15,7 @@ export interface PlanNarrativeInput {
   yearsToRetirement: number
   expectedReturn: number
   inflationRate: number
+  spendingMode: 'simple' | 'detailed'
   replacementRate: number
   withdrawalRate: number
   showRealValues: boolean
@@ -65,6 +66,7 @@ export function buildPlanNarrative(input: PlanNarrativeInput): PlanNarrative {
     yearsToRetirement,
     expectedReturn,
     inflationRate,
+    spendingMode,
     replacementRate,
     withdrawalRate,
     showRealValues,
@@ -98,7 +100,7 @@ export function buildPlanNarrative(input: PlanNarrativeInput): PlanNarrative {
     ? `and plan to retire at ${people[0].retirementAge}`
     : `and plan to retire at ${people.map(p => `${p.retirementAge} (${p.name})`).join(' and ')}`
 
-  if (totalAnnualIncome <= 0) {
+  if (totalAnnualIncome <= 0 && requiredAnnualIncome <= 0) {
     const subject = people.length === 1 ? "You're" : `${joinNames(people)} are`
     return {
       status: 'no-income',
@@ -131,6 +133,10 @@ export function buildPlanNarrative(input: PlanNarrativeInput): PlanNarrative {
     ? ` Your target includes a ${money(giftTotal)} reserve for planned gifts.`
     : ''
 
+  const goalClause = spendingMode === 'detailed'
+    ? `your ${money(requiredAnnualIncome)} after-tax retirement budget`
+    : `a ${money(requiredAnnualIncome)} pre-tax target (${replacementRate}% of income)`
+
   const guaranteedSentence = guaranteedAnnualIncome > 0
     ? ` Guaranteed income of ${money(guaranteedAnnualIncome)} covers part of that; the portfolio supplies ${money(portfolioWithdrawal)} at ${withdrawalRate}%.`
     : ` The portfolio supplies ${money(portfolioWithdrawal)} at ${withdrawalRate}%.`
@@ -155,7 +161,7 @@ export function buildPlanNarrative(input: PlanNarrativeInput): PlanNarrative {
     paragraphs: [
       `${subject} ${savingClause} ${retirementClause}. ${growthClause}`,
       `By age ${householdRetirementAge}, the household portfolio is projected to reach about ${money(portfolioAtRetirement)} ${basis}. ${comparison}${giftSentence}`,
-      `That supports about ${money(projectedAnnualIncome)} a year before tax and ${money(afterTaxAnnualIncome)} after tax, against a ${money(requiredAnnualIncome)} pre-tax target (${replacementRate}% of income).${guaranteedSentence}${taxSentence}${leverSentence}`,
+      `That supports about ${money(projectedAnnualIncome)} a year before tax and ${money(afterTaxAnnualIncome)} after tax, against ${goalClause}.${guaranteedSentence}${taxSentence}${leverSentence}`,
     ],
   }
 }

@@ -13,6 +13,7 @@ const base: PlanNarrativeInput = {
   yearsToRetirement: 31,
   expectedReturn: 7,
   inflationRate: 2.5,
+  spendingMode: 'simple',
   replacementRate: 60,
   withdrawalRate: 4,
   showRealValues: true,
@@ -50,6 +51,17 @@ describe('buildPlanNarrative', () => {
     expect(result.status).toBe('no-income')
     expect(result.headline).toMatch(/add your income/i)
     expect(result.paragraphs[0]).toContain('$187,000')
+  })
+
+  it('describes a detailed budget as after-tax spending, not a share of income', () => {
+    const result = buildPlanNarrative({ ...base, spendingMode: 'detailed', requiredAnnualIncome: 96000 })
+    expect(result.paragraphs[2]).toContain('your $96,000 after-tax retirement budget')
+    expect(result.paragraphs[2]).not.toContain('% of income')
+  })
+
+  it('still judges a budget when there is no salary', () => {
+    const result = buildPlanNarrative({ ...base, spendingMode: 'detailed', totalAnnualIncome: 0, requiredAnnualIncome: 96000 })
+    expect(result.status).toBe('on-track')
   })
 
   it('summarizes an on-track household plan', () => {

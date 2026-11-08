@@ -232,7 +232,10 @@ export type AccountV2 = z.infer<typeof accountSchema>
 
 // --- Income -----------------------------------------------------------------
 
-export const INCOME_KINDS = ['employment', 'selfEmployment', 'rental', 'dbPension', 'annuity', 'windfall', 'other'] as const
+// `bonus` and `rsu` are employment income on the tax return, but stay separate
+// from `employment`: only the salary drives CPP estimates and the replacement
+// income target. `rsu` is paid in shares, not cash.
+export const INCOME_KINDS = ['employment', 'bonus', 'rsu', 'selfEmployment', 'rental', 'dbPension', 'annuity', 'windfall', 'other'] as const
 
 export const growthSchema = z.object({
   // cpi: grows with inflation plus `pct` real; fixed: grows `pct` nominal; none: flat nominal.
@@ -257,6 +260,12 @@ export const incomeSchema = z.object({
     bridge: z.object({ amount: money, untilAge: age }).optional(),
     survivorPct: percent(0, 100).default(60),
   }).optional(),
+  // kind 'rsu': the amount is the shares' value at vesting. The share count
+  // follows that year's projected price for this holding.
+  rsu: z.object({
+    holdingId: id.optional(), // undefined = the owner's first stock holding
+    sellToCover: z.boolean().default(true),
+  }).optional(),
 })
 export type IncomeStream = z.infer<typeof incomeSchema>
 
@@ -273,6 +282,10 @@ export const expenseItemSchema = z.object({
   to: timePointSchema.optional(),
   // Essential spending is the floor that dynamic withdrawal strategies never cut.
   essential: z.boolean().default(true),
+  // Off keeps a recurring cost at its stated dollar amount, e.g. a fixed-rate
+  // payment. One-time items always stay in today's dollars.
+  indexed: z.boolean().default(true),
+  // Yearly growth on top of inflation; when not indexed, the whole yearly change.
   realGrowthPct: percent(-20, 20).default(0),
 })
 export type ExpenseItem = z.infer<typeof expenseItemSchema>
@@ -358,7 +371,11 @@ export type SpendingStrategy = z.infer<typeof spendingStrategySchema>
 export const drawdownSchema = z.object({
   strategy: spendingStrategySchema.default({ kind: 'initialPct', ratePct: 4 }),
   order: z.enum(['proRata', 'custom']).default('proRata'),
-  customOrder: z.array(accountTypeSchema).default(['CASH', 'STOCK', 'NONREG', 'RRIF', 'RRSP', 'LIF', 'LIRA', 'FHSA', 'TFSA']),
+  // A saved order can predate an account type. Adding it last matches where
+  // the engine already ranks unlisted types, and puts it on screen to reorder.
+  customOrder: z.array(accountTypeSchema)
+    .default(['CASH', 'STOCK', 'NONREG', 'RRIF', 'RRSP', 'LIF', 'LIRA', 'FHSA', 'TFSA'])
+    .transform(order => [...order, ...ACCOUNT_TYPES.filter(type => !order.includes(type))]),
   rrifConversionAge: z.number().int().min(55).max(71).default(71),
   rrifUseYoungerSpouseAge: z.boolean().default(false),
   meltdown: z.object({

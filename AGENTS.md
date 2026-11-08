@@ -153,6 +153,7 @@ Provider order in `App.tsx`: ThemeProvider › ToastProvider › RouteProvider �
   - The share price (`priceUsd`) is always in USD, converted at the plan's `assumptions.usdCad.rate` (Bank of Canada, held constant in projections). Every other amount, including the cost per share, is CAD. Older plans that stored a CAD `price` are converted in `parsePlanData`.
   - Vesting and the ESPP benefit are taxed as employment income. With `sellToCover` (default on), the extra tax and payroll a vest causes are paid by selling the new shares at vest (no gain); the row reports it as `stockTaxWithheld`, and it is still part of `tax`.
   - `src/lib/insights/stockScenarios.ts` compares the three cases with and without the sell plan.
+- Yearly bonuses are income kinds. `bonus` (cash) is employment income, kept apart from `employment` so it stays out of the primary salary (CPP estimate, replacement target). `rsu` is a typical CAD value per year: that year's projected price for the chosen holding gives the share count, it is taxed as stock compensation, and `row.rsuAwards` reports shares before and after sell to cover. With no holding, the value goes to a non-registered account.
 - `src/lib/formatting.ts` - `money()` / `moneyCompact()` (with `$`) and `formatMoney()` / `formatCompactMoney()` (digits only) for all currency display
 - `src/hooks/useRetirementGoal.ts` - Shared goal calculation hook
 - `src/lib/validation.ts` - Zod schemas for YAML import and form validation

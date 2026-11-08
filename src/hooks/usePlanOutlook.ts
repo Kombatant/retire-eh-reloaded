@@ -17,10 +17,9 @@ export function usePlanOutlook() {
 
   const goal = useRetirementGoal({
     currentProjectionData: projection.currentProjectionData,
-    annualIncome: projection.totalAnnualIncome,
+    annualSpendingTarget: projection.retirementSpendingTarget,
     annualPension: guaranteed,
     guaranteedIncomeSchedule: projection.guaranteedIncomeSchedule,
-    replacementRate: assumptions.replacementRate,
     withdrawalRate: assumptions.withdrawalRate,
     yearsToRetirement: projection.yearsToRetirement,
     expectedReturn: assumptions.expectedReturn,
@@ -47,6 +46,8 @@ export function usePlanOutlook() {
   return {
     goal,
     outlook,
+    // A detailed budget is money to spend; a simple target is income before tax.
+    goalIsAfterTax: activePlan.expenses.mode === 'detailed',
     lasts,
     estateValue,
     estateYear: estate?.year ?? null,

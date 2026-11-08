@@ -4,10 +4,9 @@ import { calculateRetirementGoal, getPortfolioAtRetirement, getPortfolioAfterGif
 
 interface UseRetirementGoalParams {
   currentProjectionData: ProjectionDataPoint[]
-  annualIncome: number
+  annualSpendingTarget: number
   annualPension: number
   guaranteedIncomeSchedule?: number[]
-  replacementRate: number
   withdrawalRate: number
   yearsToRetirement: number
   expectedReturn: number
@@ -26,10 +25,9 @@ export interface RetirementGoalWithIncome extends RetirementGoalResult {
 
 export function useRetirementGoal({
   currentProjectionData,
-  annualIncome,
+  annualSpendingTarget,
   annualPension,
   guaranteedIncomeSchedule = [],
-  replacementRate,
   withdrawalRate,
   yearsToRetirement,
   expectedReturn,
@@ -43,10 +41,9 @@ export function useRetirementGoal({
   const goal = useMemo(
     () => calculateRetirementGoal({
       currentProjectionData,
-      annualIncome,
+      annualSpendingTarget,
       annualPension,
       guaranteedIncomeSchedule,
-      replacementRate,
       withdrawalRate,
       yearsToRetirement,
       expectedReturn,
@@ -57,7 +54,7 @@ export function useRetirementGoal({
       plannedGifts,
       effectiveTaxRate,
     }),
-    [currentProjectionData, annualIncome, annualPension, guaranteedIncomeSchedule, replacementRate, withdrawalRate, yearsToRetirement, expectedReturn, inflationRate, currentAnnualContributions, currentPortfolio, showRealValues, plannedGifts, effectiveTaxRate]
+    [currentProjectionData, annualSpendingTarget, annualPension, guaranteedIncomeSchedule, withdrawalRate, yearsToRetirement, expectedReturn, inflationRate, currentAnnualContributions, currentPortfolio, showRealValues, plannedGifts, effectiveTaxRate]
   )
 
   const inflationFactor = showRealValues

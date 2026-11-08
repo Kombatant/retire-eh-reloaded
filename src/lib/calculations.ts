@@ -179,10 +179,10 @@ export interface RetirementGoalResult {
 
 export function calculateRetirementGoal(params: {
   currentProjectionData: ProjectionDataPoint[]
-  annualIncome: number
+  // What the plan spends in its first retirement year, in today's dollars.
+  annualSpendingTarget: number
   annualPension: number
   guaranteedIncomeSchedule?: number[]
-  replacementRate: number
   withdrawalRate: number
   yearsToRetirement: number
   expectedReturn: number
@@ -195,10 +195,9 @@ export function calculateRetirementGoal(params: {
 }): RetirementGoalResult {
   const {
     currentProjectionData,
-    annualIncome,
+    annualSpendingTarget,
     annualPension,
     guaranteedIncomeSchedule = [],
-    replacementRate,
     withdrawalRate,
     yearsToRetirement,
     expectedReturn,
@@ -218,7 +217,6 @@ export function calculateRetirementGoal(params: {
   // Gifts are reserved as a separate pot withdrawn from the retirement portfolio.
   const giftTotal = getGiftTotal(plannedGifts, yearsToRetirement, showRealValues, inflationRate)
   const portfolioAfterGifts = getPortfolioAfterGifts(portfolioAtRetirement, plannedGifts, yearsToRetirement, showRealValues, inflationRate)
-  const targetAnnualIncome = annualIncome * inflationFactor
   // A delayed CPP/OAS start means the retirement-year benefit can be zero even
   // though the household will receive it later. Levelizing the full stream
   // values those future benefits without changing the existing goal formula.
@@ -226,11 +224,13 @@ export function calculateRetirementGoal(params: {
     ? levelizeGuaranteedIncome(guaranteedIncomeSchedule, withdrawalRate)
     : annualPension
   const targetPension = levelizedGuaranteedIncome * inflationFactor
-  const requiredAnnualIncome = targetAnnualIncome * (replacementRate / 100)
+  const requiredAnnualIncome = annualSpendingTarget * inflationFactor
   const requiredAnnualIncomeAfterPension = Math.max(0, requiredAnnualIncome - targetPension)
   // Required portfolio = income portfolio (for the 4% rule) PLUS the reserved gifts.
   const requiredPortfolio = (withdrawalRate > 0 ? requiredAnnualIncomeAfterPension / (withdrawalRate / 100) : 0) + giftTotal
-  const progress = requiredPortfolio > 0 ? Math.min(100, (portfolioAtRetirement / requiredPortfolio) * 100) : 0
+  // With a goal that guaranteed income fully covers, no savings are needed.
+  const noSavingsNeededProgress = requiredAnnualIncome > 0 ? 100 : 0
+  const progress = requiredPortfolio > 0 ? Math.min(100, (portfolioAtRetirement / requiredPortfolio) * 100) : noSavingsNeededProgress
   const gap = requiredPortfolio - portfolioAtRetirement
 
   const additionalAnnualSavings = yearsToRetirement > 0
@@ -243,7 +243,7 @@ export function calculateRetirementGoal(params: {
   const rrspAtRetirement = lastPoint?.RRSP ?? 0
   const afterTaxPortfolioAtRetirement = portfolioAtRetirement - (rrspAtRetirement * (effectiveTaxRate / 100))
   const afterTaxPortfolioAfterGifts = Math.max(0, afterTaxPortfolioAtRetirement - giftTotal)
-  const afterTaxProgress = requiredPortfolio > 0 ? Math.min(100, (afterTaxPortfolioAtRetirement / requiredPortfolio) * 100) : 0
+  const afterTaxProgress = requiredPortfolio > 0 ? Math.min(100, (afterTaxPortfolioAtRetirement / requiredPortfolio) * 100) : noSavingsNeededProgress
   const afterTaxGap = requiredPortfolio - afterTaxPortfolioAtRetirement
   const afterTaxAdditionalAnnualSavings = yearsToRetirement > 0
     ? calculateAdditionalAnnualSavings(afterTaxGap, yearsToRetirement, expectedReturn, inflationRate)
