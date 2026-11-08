@@ -172,9 +172,9 @@ describe('per-account returns', () => {
       assumptions: { expectedReturn: 7, assetReturns: { bondPct: 4 } },
     })
     const row = simulatePlan(p, { startYear: YEAR, inflationPct: 0 }).result.rows[0]
-    const monthly = (rate: number) => 100000 * Math.pow(1 + rate / 12, 12)
-    expect(row.balancesEnd[0]).toBeCloseTo(monthly(0.07), 4)
-    expect(row.balancesEnd[1]).toBeCloseTo(monthly(0.03), 4)
-    expect(row.balancesEnd[2]).toBeCloseTo(monthly(0.04), 4)
+    // With no contributions, a year's growth is exactly that year's annual return.
+    expect(row.balancesEnd[0]).toBeCloseTo(107000, 4)
+    expect(row.balancesEnd[1]).toBeCloseTo(103000, 4)
+    expect(row.balancesEnd[2]).toBeCloseTo(104000, 4)
   })
 })

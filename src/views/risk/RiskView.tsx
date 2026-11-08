@@ -7,6 +7,7 @@ import { useRiskAnalysis } from '@/hooks/useRiskAnalysis'
 import { useSubView } from '@/hooks/useSubView'
 import { patchSimulation } from '@/lib/plan/edits'
 import { HISTORICAL_RANGE, HISTORICAL_SOURCE } from '@/lib/sim/paths/historical'
+import { successDescription, successIsMeaningful } from '@/lib/sim/risk'
 import { householdBaseAge } from '@/lib/sim'
 import { money, moneyCompact } from '@/lib/formatting'
 import { axisProps, barTooltipProps, chartColors, gridProps, sequentialColors, tooltipProps } from '@/lib/ui/chartTheme'
@@ -16,6 +17,7 @@ import { PageHeader } from '@/components/ui/PageHeader'
 import { SubTabs } from '@/components/ui/SubTabs'
 import { Card, CardHeader } from '@/components/ui/Card'
 import { Stat, type StatTone } from '@/components/ui/Stat'
+import { Callout } from '@/components/ui/Callout'
 import { MoneyModeBadge } from '@/components/ui/Badge'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { Field } from '@/components/ui/Field'
@@ -43,6 +45,8 @@ function Verdict({ rate }: { rate: number | undefined }) {
 
 export function RiskView() {
   const risk = useRiskAnalysis()
+  const { compiledPlan, simulation } = useProjectionContext()
+  const testable = successIsMeaningful(compiledPlan, simulation)
   const [tab, setTab] = useSubView(TABS, 'monte-carlo')
   const mc = risk.monteCarlo
   const backtest = risk.backtest
@@ -59,16 +63,16 @@ export function RiskView() {
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Stat
           label="Chance of success"
-          value={pct(mc?.successRate)}
-          tone={verdict(mc?.successRate).tone}
-          info="Share of simulated markets in which spending is fully funded every year to the end of the plan. The whole plan, including tax and benefits, is re-run each time."
-          sub={<><Verdict rate={mc?.successRate} />{mc && <> · {mc.successes} of {mc.runs} runs</>}</>}
+          value={testable ? pct(mc?.successRate) : 'n/a'}
+          tone={testable ? verdict(mc?.successRate).tone : undefined}
+          info={successDescription(compiledPlan)}
+          sub={testable ? <><Verdict rate={mc?.successRate} />{mc && <> · {mc.successes} of {mc.runs} runs</>}{risk.stale && <> · updating</>}</> : 'No withdrawals to test'}
         />
         <Stat
           label="Historical success"
-          value={pct(backtest?.successRate)}
-          tone={verdict(backtest?.successRate).tone}
-          info={`Your plan replayed through actual Canadian returns and inflation, starting in each year from ${HISTORICAL_RANGE}.`}
+          value={testable ? pct(backtest?.successRate) : 'n/a'}
+          tone={testable ? verdict(backtest?.successRate).tone : undefined}
+          info={`Your whole plan, from today, replayed through actual Canadian returns and inflation starting in each year from ${HISTORICAL_RANGE}. Plans longer than the data wrap around to the start of it.`}
           sub={<><Verdict rate={backtest?.successRate} />{backtest && <> · {backtest.windows.filter(w => w.success).length} of {backtest.windows.length} start years</>}</>}
         />
         <Stat
@@ -89,6 +93,7 @@ export function RiskView() {
           { value: 'stress', label: 'Stress tests' },
         ]}
       >
+        {risk.error && <Callout tone="danger" title="Risk analysis failed" className="mb-4">{risk.error}</Callout>}
         {tab === 'monte-carlo' && <MonteCarloCard />}
         {tab === 'historical' && <HistoricalCard />}
         {tab === 'stress' && <StressCard />}
@@ -179,8 +184,8 @@ function HistoricalCard() {
   return (
     <Card>
       <CardHeader
-        title="If you had retired in a past year"
-        description="Savings left at the end of the plan, in today's dollars, for each historical start year."
+        title="If your plan had started in a past year"
+        description={`Savings left at the end, in today's dollars. Each start year runs your whole plan from today, including the years before you retire. The data covers ${HISTORICAL_RANGE}; longer plans wrap around to its start.`}
         actions={<SegmentedControl ariaLabel="Display" size="sm" value={view} onChange={setView} options={[{ value: 'chart', label: 'Chart' }, { value: 'table', label: 'Table' }]} />}
       />
       {!backtest ? (

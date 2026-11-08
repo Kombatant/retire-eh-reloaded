@@ -7,10 +7,23 @@ import { CRASH_SCENARIOS, HISTORICAL_DATA, historicalPath, overlayPath, type Mix
 import { deterministicPath } from './paths/deterministic'
 import type { CompiledPlan, SimResult } from './types'
 
-// A run fails when a year's planned spending or withdrawal cannot be funded
-// (beyond a small tolerance for rounding).
+// A run fails when a year's `shortfall` is more than rounding. What counts as
+// a shortfall depends on the spending mode and strategy; see YearRow.
 export function runSucceeded(result: SimResult): boolean {
   return result.rows.every(r => r.shortfall <= Math.max(100 * r.cpi, 0.01 * (r.withdrawal + r.shortfall)))
+}
+
+// In simple mode success means the planned withdrawals could be made, so with
+// nothing to withdraw there is nothing to test.
+export function successIsMeaningful(c: CompiledPlan, result: SimResult): boolean {
+  return c.expenseMode === 'detailed' || result.rows.some(r => r.withdrawal > 0 || r.shortfall > 0)
+}
+
+export function successDescription(c: CompiledPlan): string {
+  if (c.expenseMode === 'simple') return 'Share of simulated markets in which your planned withdrawals could be made every year to the end of the plan. It does not test whether they reach your income target; the goal above does.'
+  const kind = c.spendingStrategy.kind
+  if (kind === 'expenses' || kind === 'initialPct') return 'Share of simulated markets in which your whole budget is funded every year to the end of the plan. The whole plan, including tax and benefits, is re-run each time.'
+  return 'Share of simulated markets in which your essential spending is funded every year. This withdrawal strategy adjusts other spending by design, so cuts to it do not count as failure.'
 }
 
 // End-of-year portfolio in plan-start dollars.

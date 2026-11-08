@@ -35,29 +35,43 @@ export function youngestPerson<T extends Pick<PersonV2, 'birthYear'>>(people: re
   return people.reduce<T | undefined>((best, p) => (!best || p.birthYear > best.birthYear ? p : best), undefined)
 }
 
+// Apply `fix` to every TimePoint in a plan. All date-bearing fields go through
+// here, so a new one only has to be added once.
+export function mapPlanTimePoints(plan: PlanV2, fix: (point: TimePoint) => TimePoint): PlanV2 {
+  const opt = (point: TimePoint | undefined) => (point ? fix(point) : point)
+  return {
+    ...plan,
+    accounts: plan.accounts.map(a => {
+      const account = { ...a, contributions: a.contributions.map(c => ({ ...c, from: opt(c.from), to: opt(c.to) })) }
+      if (account.type !== 'STOCK') return account
+      return {
+        ...account,
+        holdings: account.holdings.map(h => ({
+          ...h,
+          rsuGrants: h.rsuGrants.map(g => ({ ...g, vestAt: fix(g.vestAt) })),
+          espp: h.espp ? { ...h.espp, from: opt(h.espp.from), to: opt(h.espp.to) } : h.espp,
+        })),
+        salePlan: account.salePlan.kind === 'none'
+          ? account.salePlan
+          : { ...account.salePlan, from: opt(account.salePlan.from), to: opt(account.salePlan.to) },
+      }
+    }),
+    incomes: plan.incomes.map(i => ({ ...i, from: opt(i.from), to: opt(i.to) })),
+    expenses: {
+      ...plan.expenses,
+      phases: plan.expenses.phases.map(ph => ({ ...ph, from: fix(ph.from), to: opt(ph.to) })),
+      items: plan.expenses.items.map(it => ({ ...it, from: opt(it.from), to: opt(it.to) })),
+    },
+    properties: plan.properties.map(pr => (pr.sale ? { ...pr, sale: { ...pr.sale, at: fix(pr.sale.at) } } : pr)),
+  }
+}
+
 // Rewrite every TimePoint that depends on `personId` into a fixed calendar
 // year, so deleting a person keeps their events on the same dates.
 export function detachPersonTimePoints(plan: PlanV2, personId: string, startYear: number): PlanV2 {
-  const fix = (point: TimePoint | undefined): TimePoint | undefined => {
-    if (!point) return point
-    if ((point.kind === 'age' || point.kind === 'retirement') && point.personId === personId) {
-      return { kind: 'year', year: resolveYear(point, plan.people, startYear, startYear) }
-    }
-    return point
-  }
-  const fixRequired = (point: TimePoint): TimePoint => fix(point) ?? point
-  return {
-    ...plan,
-    accounts: plan.accounts.map(a => ({
-      ...a,
-      contributions: a.contributions.map(c => ({ ...c, from: fix(c.from), to: fix(c.to) })),
-    })),
-    incomes: plan.incomes.map(i => ({ ...i, from: fix(i.from), to: fix(i.to) })),
-    expenses: {
-      ...plan.expenses,
-      phases: plan.expenses.phases.map(ph => ({ ...ph, from: fixRequired(ph.from), to: fix(ph.to) })),
-      items: plan.expenses.items.map(it => ({ ...it, from: fix(it.from), to: fix(it.to) })),
-    },
-    properties: plan.properties.map(pr => (pr.sale ? { ...pr, sale: { ...pr.sale, at: fixRequired(pr.sale.at) } } : pr)),
-  }
+  return mapPlanTimePoints(plan, point => (
+    (point.kind === 'age' || point.kind === 'retirement') && point.personId === personId
+      ? { kind: 'year', year: resolveYear(point, plan.people, startYear, startYear) }
+      : point
+  ))
 }

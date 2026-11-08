@@ -4,6 +4,9 @@ import { estimateCppAt65, estimateCppFromHistory } from '@/lib/benefits/cpp'
 import { GIFT_CATEGORY, type PersonV2, type PlanV2, type UiPrefs } from './schema'
 import { resolveYear, youngestPerson } from './time'
 
+// Used for the goal when the strategy has no rate of its own.
+export const GUIDELINE_WITHDRAWAL_RATE = 4
+
 // Read-only projection of a v2 plan into the v1 shapes the current components
 // and engine consume. This keeps the UI unchanged while the model evolves.
 
@@ -87,7 +90,9 @@ export function toLegacyAssumptions(plan: PlanV2, uiPrefs: Pick<UiPrefs, 'showRe
     expectedReturn: plan.assumptions.expectedReturn,
     inflationRate: plan.assumptions.inflationRate,
     replacementRate: plan.expenses.replacementRate,
-    withdrawalRate: strategy.kind === 'initialPct' ? strategy.ratePct : 4,
+    withdrawalRate: strategy.kind === 'initialPct' || strategy.kind === 'pctPortfolio' ? strategy.ratePct
+      : strategy.kind === 'guytonKlinger' ? strategy.initialRatePct
+        : GUIDELINE_WITHDRAWAL_RATE,
     showRealValues: uiPrefs.showRealValues,
     plannedGifts: toLegacyGifts(plan, nowYear),
     workingMarginalTaxRate: plan.assumptions.workingMarginalTaxRate,

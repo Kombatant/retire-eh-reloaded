@@ -92,7 +92,9 @@ describe('every jurisdiction', () => {
     const frozen = computeIncomeTax({ ...emptyIncome('PE', 40), otherOrdinary: 80000 }, { deflator: 0.7 })
     expect(frozen.provincial).toBeGreaterThan(indexed.provincial)
     const on = computeIncomeTax({ ...emptyIncome('ON', 40), otherOrdinary: 80000 }, { deflator: 0.7 })
-    expect(on.provincial).toBeCloseTo(ordinary('ON', 80000).provincial, 6)
+    // Ontario's brackets are indexed at this income. Its Health Premium is not:
+    // $750 at $114,286 of that year's dollars, worth $525 at the plan start.
+    expect(on.provincial).toBeCloseTo(ordinary('ON', 80000).provincial - 750 + 525, 6)
   })
 })
 

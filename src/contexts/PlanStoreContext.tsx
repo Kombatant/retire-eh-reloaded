@@ -2,12 +2,25 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useReducer,
 import type { Person } from '@/types/person'
 import type { PlanAssumptions } from '@/types/plan'
 import type { PlanV2, UiPrefs } from '@/lib/plan/schema'
-import { loadStore, serializeStore, STORE_KEY, type Baseline, type Snapshot, type StoreState } from '@/lib/plan/storage'
+import {
+  acknowledgeRecovery,
+  loadStoreWithRecovery,
+  preserveRecovery,
+  readRecoveryEntries,
+  serializeStore,
+  storeSaveProblem,
+  STORE_KEY,
+  type Baseline,
+  type RecoveryEntry,
+  type Snapshot,
+  type StoreState,
+} from '@/lib/plan/storage'
 import { toLegacyAssumptions, toLegacyPeople } from '@/lib/plan/legacy-view'
 import { newId } from '@/lib/plan/ids'
 
 type StoreAction =
   | { type: 'UPDATE_ACTIVE'; update: (plan: PlanV2) => PlanV2 }
+  | { type: 'UPDATE_PLAN'; id: string; update: (plan: PlanV2) => PlanV2 }
   | { type: 'REPLACE_ACTIVE'; plan: PlanV2 }
   | { type: 'ADD_PLAN'; plan: PlanV2 }
   | { type: 'SELECT_PLAN'; id: string }
@@ -25,6 +38,8 @@ function storeReducer(state: StoreState, action: StoreAction): StoreState {
         ...state,
         plans: state.plans.map(p => (p.id === state.activePlanId ? action.update(p) : p)),
       }
+    case 'UPDATE_PLAN':
+      return { ...state, plans: state.plans.map(p => (p.id === action.id ? action.update(p) : p)) }
     case 'REPLACE_ACTIVE':
       // Imported plans take over the active slot but keep its identity, so the
       // plan list does not silently grow on every import.
@@ -72,7 +87,14 @@ interface PlanStoreValue {
   legacyAssumptions: PlanAssumptions
   storageError: string | null
   clearStorageError: () => void
+  // Set while edits cannot be saved because a plan holds an invalid value.
+  saveProblem: string | null
+  // Stored data that could not be read; an untouched copy is kept.
+  recoveryEntries: RecoveryEntry[]
+  acknowledgeRecoveryEntries: () => void
   updateActivePlan: (update: (plan: PlanV2) => PlanV2) => void
+  // For results that arrive later: they must go to the plan that asked.
+  updatePlan: (id: string, update: (plan: PlanV2) => PlanV2) => void
   replaceActivePlan: (plan: PlanV2) => void
   addPlan: (plan: PlanV2) => void
   duplicatePlan: (id: string) => void
@@ -99,21 +121,30 @@ function storageErrorMessage(error: unknown): string {
 
 export function PlanStoreProvider({ children, now: nowProp }: { children: ReactNode; now?: Date }) {
   const [now] = useState(() => nowProp ?? new Date())
-  const [state, dispatch] = useReducer(storeReducer, undefined, () => loadStore(localStorage, now))
-  const [storageError, setStorageError] = useState<string | null>(null)
+  const [boot] = useState(() => {
+    const loaded = loadStoreWithRecovery(localStorage, now)
+    return { state: loaded.state, canOverwrite: loaded.recovery ? preserveRecovery(localStorage, loaded.recovery, now) : true }
+  })
+  const [state, dispatch] = useReducer(storeReducer, boot.state)
+  const [storageError, setStorageError] = useState<string | null>(() =>
+    boot.canOverwrite ? null : 'Some saved data could not be read or backed up, so nothing is being saved. Free up browser storage and reload.')
+  const [recoveryEntries, setRecoveryEntries] = useState<RecoveryEntry[]>(() =>
+    readRecoveryEntries(localStorage).filter(e => !e.acknowledged))
   const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null)
   const nowYear = now.getFullYear()
 
+  const serialized = useMemo(() => serializeStore(state), [state])
+  const saveProblem = useMemo(() => (serialized === null ? storeSaveProblem(state) : null), [serialized, state])
+
   useEffect(() => {
-    const serialized = serializeStore(state)
-    if (serialized === null) return
+    if (serialized === null || !boot.canOverwrite) return
     try {
       localStorage.setItem(STORE_KEY, serialized)
     } catch (error) {
       console.error('localStorage write failed:', error)
       queueMicrotask(() => setStorageError(storageErrorMessage(error)))
     }
-  }, [state])
+  }, [serialized, boot.canOverwrite])
 
   const activePlan = state.plans.find(p => p.id === state.activePlanId) ?? state.plans[0]
   const legacyPeople = useMemo(() => toLegacyPeople(activePlan, nowYear), [activePlan, nowYear])
@@ -127,6 +158,7 @@ export function PlanStoreProvider({ children, now: nowProp }: { children: ReactN
     : activePlan.people[0]?.id ?? null
 
   const updateActivePlan = useCallback((update: (plan: PlanV2) => PlanV2) => dispatch({ type: 'UPDATE_ACTIVE', update }), [])
+  const updatePlan = useCallback((id: string, update: (plan: PlanV2) => PlanV2) => dispatch({ type: 'UPDATE_PLAN', id, update }), [])
   const replaceActivePlan = useCallback((plan: PlanV2) => dispatch({ type: 'REPLACE_ACTIVE', plan }), [])
   const addPlan = useCallback((plan: PlanV2) => dispatch({ type: 'ADD_PLAN', plan }), [])
   const selectPlan = useCallback((id: string) => dispatch({ type: 'SELECT_PLAN', id }), [])
@@ -139,6 +171,10 @@ export function PlanStoreProvider({ children, now: nowProp }: { children: ReactN
     dispatch({ type: 'ADD_PLAN', plan: { ...structuredClone(source), id: newId('plan'), name: `${source.name} (copy)` } })
   }, [state.plans])
   const clearStorageError = useCallback(() => setStorageError(null), [])
+  const acknowledgeRecoveryEntries = useCallback(() => {
+    acknowledgeRecovery(localStorage)
+    setRecoveryEntries([])
+  }, [])
   const addSnapshot = useCallback((snapshot: Snapshot) => dispatch({ type: 'ADD_SNAPSHOT', snapshot }), [])
   const deleteSnapshot = useCallback((id: string) => dispatch({ type: 'DELETE_SNAPSHOT', id }), [])
   const setBaseline = useCallback((baseline: Baseline) => dispatch({ type: 'SET_BASELINE', baseline }), [])
@@ -153,7 +189,11 @@ export function PlanStoreProvider({ children, now: nowProp }: { children: ReactN
     legacyAssumptions,
     storageError,
     clearStorageError,
+    saveProblem,
+    recoveryEntries,
+    acknowledgeRecoveryEntries,
     updateActivePlan,
+    updatePlan,
     replaceActivePlan,
     addPlan,
     duplicatePlan,

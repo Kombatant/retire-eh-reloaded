@@ -2,7 +2,8 @@
 import type { PlanV2 } from '@/lib/plan/schema'
 import { runRiskJob } from '@/lib/sim/riskJob'
 
-interface RiskRequest {
+type RiskRequest = { cancel: true } | {
+  cancel?: undefined
   id: number
   plan: PlanV2
   startYear: number
@@ -12,6 +13,10 @@ interface RiskRequest {
 let latest = 0
 
 self.onmessage = (event: MessageEvent<RiskRequest>) => {
+  if (event.data.cancel) {
+    latest = 0
+    return
+  }
   const { id, plan, startYear } = event.data
   latest = id
   void runRiskJob(plan, startYear, update => self.postMessage({ id, ...update }), {

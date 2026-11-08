@@ -42,24 +42,28 @@ function needsRefresh(plan: PlanV2): boolean {
   return plan.accounts.some(a => a.type === 'STOCK' && a.holdings.some(h => h.symbol.trim() && isStale(h.lastQuote?.fetchedAt)))
 }
 
-async function runRefresh(plan: PlanV2, update: (fn: (p: PlanV2) => PlanV2) => void) {
+type PlanUpdater = (planId: string, fn: (p: PlanV2) => PlanV2) => void
+
+// The response is applied to the plan that asked, even if another plan is
+// open by the time it arrives.
+async function runRefresh(plan: PlanV2, update: PlanUpdater) {
   const symbols = symbolsIn(plan)
   const { provider, apiKey } = status.settings
   if (symbols.length === 0 || status.refreshing) return
   setStatus({ refreshing: true })
   const result = await refreshQuotes(symbols, provider, apiKey)
   const fetchedAt = new Date().toISOString()
-  if (result.usdCad || Object.keys(result.prices).length > 0) update(p => applyQuotes(p, result.prices, fetchedAt, result.usdCad))
+  if (result.usdCad || Object.keys(result.prices).length > 0) update(plan.id, p => applyQuotes(p, result.prices, fetchedAt, result.usdCad))
   setStatus({ refreshing: false, errors: result.errors, rateError: null, lastRun: fetchedAt })
 }
 
 // The exchange rate alone: the Bank of Canada needs no API key.
-async function runRateRefresh(update: (fn: (p: PlanV2) => PlanV2) => void) {
+async function runRateRefresh(planId: string, update: PlanUpdater) {
   if (status.refreshing) return
   setStatus({ refreshing: true })
   try {
     const { rate, asOf } = await fetchUsdCad()
-    update(p => setUsdCad(p, rate, asOf))
+    update(planId, p => setUsdCad(p, rate, asOf))
     setStatus({ refreshing: false, rateError: null })
   } catch (error) {
     setStatus({ refreshing: false, rateError: error instanceof Error ? error.message : 'Could not get the exchange rate.' })
@@ -67,12 +71,12 @@ async function runRateRefresh(update: (fn: (p: PlanV2) => PlanV2) => void) {
 }
 
 export function useStockQuotes() {
-  const { activePlan, updateActivePlan } = usePlanStore()
+  const { activePlan, updatePlan } = usePlanStore()
   const state = useSyncExternalStore(subscribe, () => status)
   return {
     ...state,
-    refresh: () => runRefresh(activePlan, updateActivePlan),
-    refreshRate: () => runRateRefresh(updateActivePlan),
+    refresh: () => runRefresh(activePlan, updatePlan),
+    refreshRate: () => runRateRefresh(activePlan.id, updatePlan),
     setSettings: (patch: Partial<MarketDataSettings>) => {
       const settings = { ...status.settings, ...patch }
       saveMarketDataSettings(settings)
@@ -84,12 +88,12 @@ export function useStockQuotes() {
 // Mounted once in the app shell: refresh stale prices (fetched before today)
 // when a plan with stock symbols is opened, if a key is saved.
 export function useAutoRefreshQuotes() {
-  const { activePlan, updateActivePlan } = usePlanStore()
+  const { activePlan, updatePlan } = usePlanStore()
   const { settings } = useSyncExternalStore(subscribe, () => status)
   useEffect(() => {
     if (!settings.autoRefresh || !settings.apiKey || autoRefreshed.has(activePlan.id)) return
     if (!needsRefresh(activePlan)) return
     autoRefreshed.add(activePlan.id)
-    void runRefresh(activePlan, updateActivePlan)
-  }, [activePlan, updateActivePlan, settings])
+    void runRefresh(activePlan, updatePlan)
+  }, [activePlan, updatePlan, settings])
 }

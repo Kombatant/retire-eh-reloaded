@@ -43,6 +43,10 @@ export interface CompiledPerson {
   // Unused contribution room at plan start, plan-start dollars (undefined = not tracked).
   rrspRoom?: number
   tfsaRoom?: number
+  // This year's FHSA participation room (undefined = the annual limit) and
+  // what is left of the lifetime limit, across all of the person's FHSAs.
+  fhsaRoom?: number
+  fhsaLifetimeRoom: number
 }
 
 export interface CompiledHolding {
@@ -90,8 +94,12 @@ export interface CompiledAccount {
   yields: { interest: number; eligibleDividends: number; foreignDividends: number }
   // CASH: the whole return is taxable interest.
   interestOnly: boolean
-  // FHSA lifetime contribution room left (Infinity for other accounts).
-  lifetimeRoom: number
+  // RRSP: age at which this account becomes a RRIF (undefined = the plan's).
+  rrifConversionAge?: number
+  // FHSA: no contributions before this calendar year.
+  openedYear?: number
+  // LIRA/LIF: the pension rules that set withdrawal limits.
+  lockedInJurisdiction?: ProvinceCode | 'FED'
   // Position in the custom withdrawal order (lower is drawn first).
   orderRank: number
   // Asset mix as fractions (allocation accounts; CASH is all cash).
@@ -253,8 +261,17 @@ export interface YearRow {
   withdrawalsByAccount: number[]
   taxableWithdrawal: number
   taxFreeWithdrawal: number
-  // Planned withdrawal the portfolio could not fund.
+  // The amount that decides whether the year counts as funded. Detailed mode:
+  // unfunded budget, or unfunded essentials for strategies that flex spending
+  // by design. Simple mode: the planned withdrawal that could not be made.
+  // Unfunded one-time costs count in every mode.
   shortfall: number
+  // Detailed mode: the after-tax budget met, and the parts of it left unfunded.
+  fundedSpending: number
+  budgetShortfall: number
+  essentialShortfall: number
+  // Strategy's target withdrawal that could not be made.
+  withdrawalShortfall: number
   tax: number
   oasClawback: number
   gis: number

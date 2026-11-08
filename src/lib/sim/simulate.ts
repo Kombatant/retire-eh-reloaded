@@ -1,10 +1,10 @@
-import { cppAdjustmentFactor, getCppIncomeAtAge, getOasIncomeAtAge } from '@/lib/calculations'
+import { cppAdjustmentFactor, getCppIncomeAtAge, getOasIncomeAtAge, maxPensionStartAge } from '@/lib/calculations'
 import { computeRetirementTaxSummary, OAS_MAX_ANNUAL_2026 } from '@/lib/tax/quebecLegacy'
 import { computeHouseholdTax, type HouseholdTaxResult } from '@/lib/tax/household'
 import { CAPITAL_GAINS_INCLUSION, computeIncomeTax, emptyIncome, marginalTaxRate, type IncomeTaxInput } from '@/lib/tax/personal'
 import { TAX_2026 } from '@/lib/tax/data/2026'
 import { probateFee } from '@/lib/tax/probate'
-import { MAX_CPP_ANNUAL_2026 } from '@/lib/plan/schema'
+import { MAX_CPP_ANNUAL_2026, RRIF_LATEST_CONVERSION_AGE } from '@/lib/plan/schema'
 import { oasAnnualAmount } from '@/lib/benefits/oas'
 import { gisAnnual } from '@/lib/benefits/gis'
 import { cppSurvivorBenefit } from '@/lib/benefits/cpp'
@@ -56,6 +56,7 @@ function addInto(target: Float64Array, source: Float64Array, scale = 1, fromOffs
 
 interface IncomeBuckets {
   employment: Float64Array
+  selfEmployment: Float64Array
   pension: Float64Array
   otherOrdinary: Float64Array
   eligibleDividends: Float64Array
@@ -69,6 +70,7 @@ function bucketIncomes(c: CompiledPlan, cpi: Float64Array, inflation: Float64Arr
   const years = c.years
   const buckets: IncomeBuckets[] = c.people.map(() => ({
     employment: new Float64Array(years),
+    selfEmployment: new Float64Array(years),
     pension: new Float64Array(years),
     otherOrdinary: new Float64Array(years),
     eligibleDividends: new Float64Array(years),
@@ -84,7 +86,8 @@ function bucketIncomes(c: CompiledPlan, cpi: Float64Array, inflation: Float64Arr
     if (income.taxTreatment === 'nonTaxable') addInto(b.nonTaxable, series)
     else if (income.taxTreatment === 'capitalGain') addInto(b.capitalGains, series)
     else if (income.taxTreatment === 'eligibleDividend') addInto(b.eligibleDividends, series)
-    else if (income.kind === 'employment' || income.kind === 'bonus' || income.kind === 'selfEmployment') addInto(b.employment, series)
+    else if (income.kind === 'employment' || income.kind === 'bonus') addInto(b.employment, series)
+    else if (income.kind === 'selfEmployment') addInto(b.selfEmployment, series)
     else if (income.kind === 'dbPension' || income.kind === 'annuity') addInto(b.pension, series)
     else addInto(b.otherOrdinary, series)
     if (income.depositAccount >= 0) {
@@ -105,6 +108,8 @@ type TaxMember = Omit<IncomeTaxInput, 'pensionSplit'>
 interface PlannedWithdrawal {
   taken: number[]
   registered: number[] // per person
+  // Part of `registered` that is not eligible pension income.
+  nonEligible: number[] // per person
   gains: number[] // per person
 }
 
@@ -112,7 +117,8 @@ interface PlannedWithdrawal {
 //
 // Conventions kept from the original engine:
 // - Before the household starts drawing down (when its last member retires),
-//   contributions are monthly and growth compounds monthly at nominal rate / 12.
+//   contributions are monthly. Under v2 a year's growth equals that year's
+//   annual return; v1 kept the original nominal rate / 12.
 // - In drawdown, the year's withdrawal comes out at the start of the year and
 //   the remainder grows at the annual nominal rate.
 // - Tax is computed in plan-start dollars with today's rules, which is
@@ -121,12 +127,17 @@ interface PlannedWithdrawal {
 //
 // Spending:
 // - Simple mode (the original model): the withdrawal follows the drawdown
-//   strategy; gifts are a pot reserved at the start of drawdown.
+//   strategy. Gifts are paid on their date from the portfolio, grossed up for
+//   tax (v1 reserved them as a pot at the start of drawdown).
 // - Detailed mode: spending is the sum of expense items, property costs and
 //   debt payments in every year. Working-year shortfalls are drawn from the
 //   portfolio (grossed up for tax); surpluses are saved if the plan says so.
 //   The "expenses" strategy withdraws exactly what after-tax spending needs;
 //   other strategies never cut below essential spending.
+//
+// One-time costs that the portfolio pays directly (gifts, debt left after a
+// property sale, a replacement home) go through fundOneOff, so they are
+// withdrawn, taxed and reported once like any other withdrawal.
 //
 // Registered accounts: RRSPs convert to RRIFs at the conversion age and then
 // pay at least the RRIF minimum; LIRAs unlock as LIFs (minimum and maximum).
@@ -170,7 +181,7 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
       // of drawdown, in that year's dollars.
       const start = expense.flow.startOffset
       if (start < 0 || start >= years) continue
-      const at = Math.max(start, D)
+      const at = v2 ? start : Math.max(start, D)
       if (at >= years) continue
       oneTimePot[at] += expense.flow.amount * Math.pow(1 + expense.flow.ratePct / 100, start) * cpi[at]
       continue
@@ -185,7 +196,9 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
 
   const balances = c.accounts.map(a => Math.max(0, a.initialBalance))
   const acb = c.accounts.map(a => Math.max(0, a.initialAcb))
-  const lifetimeRoom = c.accounts.map(a => a.lifetimeRoom)
+  // One ledger per person: the limits apply across all of their FHSAs.
+  const fhsaYearRoom = c.people.map(p => p.fhsaRoom ?? LIMITS.fhsaAnnual)
+  const fhsaLifetime = c.people.map(p => p.fhsaLifetimeRoom)
   // Ownership changes when a spouse dies (rollover).
   const owner = c.accounts.map(a => a.ownerIndex)
   // Each account's return differs from the path by its expected-return spread.
@@ -252,7 +265,8 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
       if (mix && path.assets) {
         return mix.equity * path.assets.equity[t] + mix.bond * path.assets.bond[t] + mix.cash * path.assets.cash[t]
       }
-      return r + spread[i]
+      // A spread can otherwise push a bad year below a total loss.
+      return Math.max(-1, r + spread[i])
     })
     const alive = c.people.map((_, i) => isAlive(i, t))
     const aliveIdx = alive.flatMap((a, i) => (a ? [i] : []))
@@ -272,12 +286,13 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
       const oasReal = v2
         ? oasAnnualAmount({ age, startAge: p.oasStartAge, yearsInCanadaAfter18: p.yearsInCanadaAfter18 })
         : getOasIncomeAtAge(OAS_MAX_ANNUAL_2026, p.oasStartAge, age)
-      let cppReal = getCppIncomeAtAge(p.cppAt65, p.cppStartAge, age)
+      const maxStart = v2 ? maxPensionStartAge(p.province) : undefined
+      let cppReal = getCppIncomeAtAge(p.cppAt65, p.cppStartAge, age, maxStart)
       // CPP survivor's pension from a deceased spouse.
       if (v2 && live && peopleCount === 2 && !alive[1 - i]) {
         const deceased = c.people[1 - i]
         cppReal += cppSurvivorBenefit({
-          deceasedPension: deceased.cppAt65 * cppAdjustmentFactor(deceased.cppStartAge),
+          deceasedPension: deceased.cppAt65 * cppAdjustmentFactor(deceased.cppStartAge, maxPensionStartAge(deceased.province)),
           survivorOwnPension: cppReal,
           survivorAge: age,
           maxRetirementPension: MAX_CPP_ANNUAL_2026,
@@ -286,7 +301,7 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
       return {
         age,
         alive: alive[i],
-        employment: income.employment[t] * live,
+        employment: (income.employment[t] + income.selfEmployment[t]) * live,
         pension: income.pension[t] * live,
         cpp: cppReal * k * live,
         oas: oasReal * k * live,
@@ -328,6 +343,10 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
       taxableWithdrawal: 0,
       taxFreeWithdrawal: 0,
       shortfall: 0,
+      fundedSpending: 0,
+      budgetShortfall: 0,
+      essentialShortfall: 0,
+      withdrawalShortfall: 0,
       tax: 0,
       oasClawback: 0,
       gis: 0,
@@ -385,16 +404,19 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
         const minAge = c.rrifUseYoungerSpouseAge ? Math.min(ageJan1, ...spouseAges) : ageJan1
         const retired = t >= c.people[o].retirementOffset
         if (acct.type === 'RRSP' || acct.type === 'RRIF') {
-          const isRrif = acct.type === 'RRIF' || ageJan1 >= c.rrifConversionAge
+          // No minimum in the year of conversion: it applies from the next January.
+          const isRrif = acct.type === 'RRIF' || ageJan1 >= (acct.rrifConversionAge ?? c.rrifConversionAge)
           if (isRrif) minimum[a] = balances[a] * rrifMinimumFactor(minAge)
         } else {
           // LIRAs unlock as a LIF once the owner is 55 and retired (or 71).
-          const unlocked = peopleYear[o].age >= LIF_EARLIEST_AGE && (acct.type === 'LIF' || retired || ageJan1 >= c.rrifConversionAge)
+          const unlocked = peopleYear[o].age >= LIF_EARLIEST_AGE && (acct.type === 'LIF' || retired || ageJan1 >= RRIF_LATEST_CONVERSION_AGE)
           if (!unlocked) {
             maximum[a] = 0
           } else {
-            minimum[a] = ageJan1 >= c.rrifConversionAge || acct.type === 'LIF' ? balances[a] * rrifMinimumFactor(minAge) : 0
-            maximum[a] = Math.max(minimum[a], balances[a] * lifMaximumFactor(ageJan1))
+            minimum[a] = ageJan1 >= RRIF_LATEST_CONVERSION_AGE || acct.type === 'LIF' ? balances[a] * rrifMinimumFactor(minAge) : 0
+            // Quebec removed the maximum for holders aged 55 and over in 2025.
+            const noMaximum = acct.lockedInJurisdiction === 'QC' && peopleYear[o].age >= LIF_EARLIEST_AGE
+            maximum[a] = noMaximum ? Infinity : Math.max(minimum[a], balances[a] * lifMaximumFactor(ageJan1))
           }
         }
         peopleYear[o].minimumWithdrawals += minimum[a]
@@ -413,6 +435,14 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
       return sale.kind === 'coverGap' && t >= sale.startOffset && t < sale.endOffset
     })
     const takenThisYear = new Array(accountCount).fill(0)
+
+    // RRIF and LIF payments are eligible pension income at 65; so is an RRSP
+    // from the year it converts. An FHSA or unconverted RRSP withdrawal is not.
+    const isPensionIncome = (a: number) => {
+      const type = c.accounts[a].type
+      if (type === 'RRIF' || type === 'LIF' || type === 'LIRA') return true
+      return type === 'RRSP' && owner[a] >= 0 && peopleYear[owner[a]].age >= (c.accounts[a].rrifConversionAge ?? c.rrifConversionAge)
+    }
 
     // Plan a withdrawal without changing balances, so the solver can try
     // amounts; apply it once the amount is settled. Required minimums always
@@ -439,10 +469,13 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
       } else {
         fill(all)
       }
-      const plan: PlannedWithdrawal = { taken, registered: zeros(), gains: zeros() }
+      const plan: PlannedWithdrawal = { taken, registered: zeros(), nonEligible: zeros(), gains: zeros() }
       for (let a = 0; a < accountCount; a++) {
         if (taken[a] <= 0) continue
-        if (c.accounts[a].taxable) credit(plan.registered, a, taken[a])
+        if (c.accounts[a].taxable) {
+          credit(plan.registered, a, taken[a])
+          if (!isPensionIncome(a)) credit(plan.nonEligible, a, taken[a])
+        }
         if (c.accounts[a].nonRegistered && balances[a] > 0) {
           credit(plan.gains, a, taken[a] * (1 - Math.min(1, acb[a] / balances[a])))
         }
@@ -461,6 +494,7 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
       for (let i = 0; i < peopleCount; i++) realized[i] += plan.gains[i]
     }
     const tfsaWithdrawals = zeros()
+    const emptyPlan = (): PlannedWithdrawal => ({ taken: new Array(accountCount).fill(0), registered: zeros(), nonEligible: zeros(), gains: zeros() })
     const recordWithdrawal = (plan: PlannedWithdrawal) => {
       const total = sum(plan.taken)
       row.withdrawal += total
@@ -476,6 +510,7 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
     const mergePlans = (x: PlannedWithdrawal, y: PlannedWithdrawal): PlannedWithdrawal => ({
       taken: x.taken.map((v, i) => v + y.taken[i]),
       registered: x.registered.map((v, i) => v + y.registered[i]),
+      nonEligible: x.nonEligible.map((v, i) => v + y.nonEligible[i]),
       gains: x.gains.map((v, i) => v + y.gains[i]),
     })
 
@@ -543,23 +578,26 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
     }
 
     // Property sales happen at the start of the year: repay the mortgage,
-    // buy any replacement home, invest the rest.
+    // buy any replacement home, invest the rest. When the proceeds fall short,
+    // the portfolio is asked for the difference once tax can be worked out
+    // below; whatever it cannot cover stays owing.
+    const salesToFund: { property: number; replacement: number; debts: { index: number; amount: number }[]; debtGap: number; homeGap: number }[] = []
     c.properties.forEach((prop, p) => {
       if (prop.saleOffset !== t || !propertyOwned[p]) return
       const gross = propertyValue[p]
       const costs = gross * prop.sellingCost
-      let repaid = 0
-      c.debts.forEach((d, j) => {
-        if (d.propertyIndex === p) {
-          repaid += debtBalance[j]
-          debtBalance[j] = 0
-        }
-      })
+      const debts = c.debts.flatMap((d, j) => (d.propertyIndex === p && debtBalance[j] > 0 ? [{ index: j, amount: debtBalance[j] }] : []))
+      const owed = sum(debts.map(d => d.amount))
+      debts.forEach(d => { debtBalance[d.index] = 0 })
       if (!prop.principalResidence) creditOwner(realized, propertyOwner[p], Math.max(0, gross - costs - propertyAcb[p]))
       const replacement = prop.replacementValue * k
-      const cash = gross - costs - repaid - replacement
-      if (cash > 0) deposit(prop.proceedsAccount, cash)
-      else if (cash < 0) applyWithdrawal(planWithdrawal(-cash))
+      const proceeds = gross - costs
+      const toDebt = Math.min(proceeds, owed)
+      const toHome = Math.min(proceeds - toDebt, replacement)
+      deposit(prop.proceedsAccount, proceeds - toDebt - toHome)
+      if (owed > toDebt || replacement > toHome) {
+        salesToFund.push({ property: p, replacement, debts, debtGap: owed - toDebt, homeGap: replacement - toHome })
+      }
       if (replacement > 0) {
         propertyValue[p] = replacement
         propertyAcb[p] = replacement
@@ -615,16 +653,20 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
     }
 
     // Real-dollar tax inputs for each living person (v2 only).
-    const taxInputs = (registered: number[], rrspDeduction: number[], extraGains?: number[]): TaxMember[] =>
+    // `registered` is the candidate on top of any one-time withdrawals already made.
+    const oneOff = { registered: zeros(), nonEligible: zeros(), taken: 0, paid: 0, shortfall: 0 }
+    const taxInputs = (registered: number[], rrspDeduction: number[], extraGains?: number[], nonEligible?: number[]): TaxMember[] =>
       aliveIdx.map(i => {
         const income = incomeByPerson[i]
         const p = c.people[i]
         return {
           province: p.province,
           age: peopleYear[i].age,
-          employment: (peopleYear[i].employment + peopleYear[i].stockCompensation) / k,
+          employment: (income.employment[t] + peopleYear[i].stockCompensation) / k,
+          selfEmployment: income.selfEmployment[t] / k,
           pension: peopleYear[i].pension / k,
-          registeredWithdrawals: registered[i] / k,
+          registeredWithdrawals: (registered[i] + oneOff.registered[i]) / k,
+          nonEligibleRegistered: ((nonEligible?.[i] ?? 0) + oneOff.nonEligible[i]) / k,
           cpp: peopleYear[i].cpp / k,
           oas: peopleYear[i].oas / k,
           otherOrdinary: (income.otherOrdinary[t] + invOrdinary[i]) / k,
@@ -637,7 +679,7 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
     const householdTax = (inputs: TaxMember[]) => computeHouseholdTax(inputs, taxOpts)
     const gisFor = (inputs: TaxMember[]) => gisAnnual(inputs.map(m => ({
       receivesOas: m.oas > 0,
-      employmentIncome: m.employment,
+      employmentIncome: m.employment + (m.selfEmployment ?? 0),
       otherIncome: m.pension + m.registeredWithdrawals + m.cpp + m.otherOrdinary +
         m.eligibleDividends * DIVIDEND_GROSS_UP + m.capitalGains * CAPITAL_GAINS_INCLUSION,
     })))
@@ -665,30 +707,81 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
     const guaranteedBeforeGis = () => peopleYear.reduce((s, p) => s + p.pension + p.cpp + p.oas, 0)
     const noDeduction = zeros()
 
-    // After-tax cash for a planned withdrawal (v2), including GIS.
+    const employmentTotal = () => peopleYear.reduce((s, p) => s + p.employment, 0)
+    // Withdrawn for a one-time cost beyond what the cost took: it pays that
+    // withdrawal's own tax, which is already part of the year's tax.
+    const oneOffCash = () => oneOff.taken - oneOff.paid
+
+    // After-tax cash for a planned withdrawal (v2), including GIS. Everything
+    // is read from this candidate, so it holds before anything is committed.
     const afterTaxCash = (planned: PlannedWithdrawal, deduction = noDeduction) => {
-      const inputs = taxInputs(planned.registered, deduction, planned.gains)
-      const tax = householdTax(inputs).total * k
+      const inputs = taxInputs(planned.registered, deduction, planned.gains, planned.nonEligible)
+      const household = householdTax(inputs)
+      const payroll = household.perPerson.reduce((s, res) => s + res.payroll.total, 0) * k
       const gis = sum(gisFor(inputs)) * k
-      return guaranteedBeforeGis() + gis + row.otherIncome + sum(planned.taken) +
-        peopleYear.reduce((s, p) => s + p.employment, 0) - tax - payrollTotal() + withheld
+      return guaranteedBeforeGis() + gis + row.otherIncome + sum(planned.taken) + employmentTotal() +
+        oneOffCash() - household.total * k - payroll + withheld
+    }
+
+    const contributedTo = { rrsp: zeros(), tfsa: zeros() }
+
+    // TFSA room available now. When the person doesn't track room, assume only
+    // this year's new room and last year's withdrawals are free.
+    const tfsaAllowance = (i: number) => {
+      const fresh = LIMITS.tfsaAnnual * k + priorTfsaWithdrawals[i]
+      const room = Number.isNaN(tfsaRoom[i])
+        ? fresh
+        : tfsaRoom[i] + (t > 0 && peopleYear[i].age >= 18 ? fresh : 0)
+      return Math.max(0, room - contributedTo.tfsa[i])
     }
 
     // Reinvest cash that was withdrawn but not needed (forced minimums,
-    // meltdown) into the owner's TFSA if they have one, else non-registered.
+    // meltdown) into the owner's TFSA as far as room allows, else non-registered.
     const reinvest = (amount: number, preferTfsaOf = -1) => {
       if (amount <= 0) return
+      let remaining = amount
       const tfsa = preferTfsaOf >= 0 ? c.accounts.findIndex((a, i) => a.type === 'TFSA' && owner[i] === preferTfsaOf) : -1
-      const target = tfsa >= 0 ? tfsa : c.reinvestAccount
-      if (target < 0) return
-      deposit(target, amount)
-      row.reinvested += amount
+      if (tfsa >= 0) {
+        const toTfsa = Math.min(remaining, tfsaAllowance(preferTfsaOf))
+        if (toTfsa > 0) {
+          deposit(tfsa, toTfsa)
+          contributedTo.tfsa[preferTfsaOf] += toTfsa
+          row.reinvested += toTfsa
+          remaining -= toTfsa
+        }
+      }
+      if (remaining > 0 && c.reinvestAccount >= 0) {
+        deposit(c.reinvestAccount, remaining)
+        row.reinvested += remaining
+      }
+    }
+
+    // Pay a one-time cost from the portfolio, grossed up for the tax it
+    // causes. Returns how much of `need` could be paid.
+    const fundOneOff = (need: number): number => {
+      if (need <= 0) return 0
+      const baseTax = householdTax(taxInputs(zeros(), noDeduction)).total * k
+      const net = (plan: PlannedWithdrawal) =>
+        sum(plan.taken) - (householdTax(taxInputs(plan.registered, noDeduction, plan.gains, plan.nonEligible)).total * k - baseTax)
+      const w = solveIncreasing(x => net(planWithdrawal(x)) - need, 0, sum(balances))
+      const plan = planWithdrawal(w)
+      const paid = Math.max(0, Math.min(need, net(plan)))
+      applyWithdrawal(plan)
+      recordWithdrawal(plan)
+      plan.registered.forEach((v, i) => { oneOff.registered[i] += v })
+      plan.nonEligible.forEach((v, i) => { oneOff.nonEligible[i] += v })
+      oneOff.taken += sum(plan.taken)
+      oneOff.paid += paid
+      return paid
     }
 
     // Sell to cover: part of the shares vesting this year is sold at once to
     // pay the income tax and payroll deductions they add. Those are the shares
-    // just received (cost = price), so the sale has no capital gain. The tax
-    // still counts in the year's tax; it is paid by the shares, not from cash.
+    // just received (cost = price), so the sale has no capital gain: ITA 7(1.31)
+    // lets shares sold within 30 days be designated as the new ones instead of
+    // averaging them with shares already held. It needs the designation on the
+    // return and no other trades in those shares in between. The tax still
+    // counts in the year's tax; it is paid by the shares, not from cash.
     let withheld = 0
     if (sellToCover.length > 0) {
       const payroll = (h: HouseholdTaxResult) => h.perPerson.reduce((s, r) => s + r.payroll.total, 0)
@@ -714,19 +807,61 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
       row.stockTaxWithheld = withheld
     }
 
-    const contributedTo = { rrsp: zeros(), tfsa: zeros() }
+    // Settle property sales the proceeds did not cover: the debt comes first.
+    for (const sale of salesToFund) {
+      const paid = fundOneOff(sale.debtGap + sale.homeGap)
+      const toDebt = Math.min(paid, sale.debtGap)
+      const debtLeft = sale.debtGap - toDebt
+      const owed = sum(sale.debts.map(d => d.amount))
+      sale.debts.forEach(d => { debtBalance[d.index] += debtLeft * (d.amount / owed) })
+      const homeLeft = sale.homeGap - (paid - toDebt)
+      if (homeLeft > 0.5) {
+        const value = sale.replacement - homeLeft
+        propertyValue[sale.property] = Math.max(0, value)
+        propertyAcb[sale.property] = Math.max(0, value)
+        if (value <= 0) propertyOwned[sale.property] = false
+      }
+      oneOff.shortfall += debtLeft + homeLeft
+    }
+
+    // Simple-mode gifts come out on their own date (v2).
+    if (v2 && oneTimePot[t] > 0) {
+      const paid = fundOneOff(oneTimePot[t])
+      row.oneTimeExpenses = paid
+      oneOff.shortfall += oneTimePot[t] - paid
+    }
+
+    // Contribution schedules run on their own dates, whichever phase the
+    // household is in, and stop when the person who makes them dies. `owner`
+    // can't tell: by then the account has rolled over to the survivor.
+    const contributions = c.accounts.map((acct, a) => {
+      let amount = contributionSeries[a][t]
+      if (acct.ownerIndex >= 0 && !alive[acct.ownerIndex]) amount = 0
+      if (acct.type === 'FHSA') {
+        const i = acct.ownerIndex
+        if (acct.openedYear !== undefined && c.startYear + t < acct.openedYear) amount = 0
+        amount = Math.min(amount, i >= 0 ? Math.min(fhsaYearRoom[i], fhsaLifetime[i]) : LIMITS.fhsaAnnual)
+        if (i >= 0) {
+          fhsaYearRoom[i] -= amount
+          fhsaLifetime[i] -= amount
+        }
+      }
+      return amount
+    })
+    const countTowardRoom = (amounts: number[]) => c.accounts.forEach((acct, a) => {
+      if (owner[a] < 0) return
+      if (acct.type === 'RRSP') contributedTo.rrsp[owner[a]] += amounts[a]
+      if (acct.type === 'TFSA') contributedTo.tfsa[owner[a]] += amounts[a]
+    })
+
     let toSave = 0
+    let contributionsAtYearEnd: number[] | null = null
 
     if (t < D) {
-      const contributions = c.accounts.map((acct, a) => {
-        let amount = contributionSeries[a][t]
-        if (owner[a] >= 0 && !alive[owner[a]]) amount = 0
-        if (acct.type === 'FHSA') {
-          amount = Math.min(amount, LIMITS.fhsaAnnual, lifetimeRoom[a])
-          lifetimeRoom[a] -= amount
-        }
-        return amount
-      })
+      countTowardRoom(contributions)
+
+      let refundOverflow = 0
+      let otherRegistered = emptyPlan()
 
       if (v2) {
         const deductible = zeros()
@@ -742,8 +877,15 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
           const without = householdTax(taxInputs(zeros(), withoutOwn))
           const refund = Math.max(0, without.total - withDeduction.total) * k
           peopleYear[i].rrspRefund = refund
-          contributions[target] += refund
           row.rrspRefunds += refund
+          // The refund goes to the TFSA as far as room allows.
+          const toTfsa = Math.min(refund, tfsaAllowance(i))
+          contributions[target] += toTfsa
+          contributedTo.tfsa[i] += toTfsa
+          if (refund > toTfsa) {
+            deposit(c.reinvestAccount, refund - toTfsa)
+            refundOverflow += refund - toTfsa
+          }
         })
 
         // Required RRIF/LIF minimums of anyone already retired come out even
@@ -751,70 +893,83 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
         const forced = planWithdrawal(0)
         if (sum(forced.taken) > 0) {
           const before = withDeduction.total * k
-          const inputs = taxInputs(forced.registered, deductible, forced.gains)
+          const inputs = taxInputs(forced.registered, deductible, forced.gains, forced.nonEligible)
           const after = householdTax(inputs)
           recordTax(after)
           applyWithdrawal(forced)
           recordWithdrawal(forced)
+          otherRegistered = forced
           if (!detailed) reinvest(sum(forced.taken) - (after.total * k - before))
         }
+        const forcedTaken = sum(forced.taken) > 0 ? sum(forced.taken) : 0
+        const baseGis = sum(gisFor(taxInputs(otherRegistered.registered, deductible, undefined, otherRegistered.nonEligible))) * k
 
         if (detailed) {
           // Working-year cash flow: earnings, benefits and withdrawals, less
           // tax, payroll, contributions and spending.
-          const inflow = peopleYear.reduce((s, p) => s + p.employment + p.pension + p.cpp + p.oas, 0) + row.otherIncome + row.withdrawal + withheld
-          const cashWithoutExtra = inflow - row.tax - payrollTotal() - sum(contributions) - esppCash - row.spending
+          const inflow = peopleYear.reduce((s, p) => s + p.employment + p.pension + p.cpp + p.oas, 0) + row.otherIncome + baseGis + forcedTaken + oneOffCash() + withheld
+          const cashWithoutExtra = inflow - row.tax - payrollTotal() - sum(contributions) - refundOverflow - esppCash - row.spending
           row.surplus = cashWithoutExtra
           if (cashWithoutExtra >= 0) {
             if (c.savingsAccount >= 0) toSave = cashWithoutExtra
-            else if (row.withdrawal > 0) reinvest(Math.min(cashWithoutExtra, row.withdrawal))
+            else if (forcedTaken > 0) reinvest(Math.min(cashWithoutExtra, forcedTaken))
           } else {
-            // Draw the shortfall from savings, grossed up for the tax it causes.
+            // Draw the shortfall from savings, grossed up for the tax it
+            // causes. The residual is measured on the proposed withdrawal,
+            // before it changes the balances the solver reads.
             const baseTax = row.tax
+            const onTopOf = (planned: PlannedWithdrawal) => {
+              const merged = mergePlans(otherRegistered, planned)
+              return taxInputs(merged.registered, deductible, planned.gains, merged.nonEligible)
+            }
             const cashAfter = (w: number) => {
               const planned = planWithdrawal(w)
-              const tax = householdTax(taxInputs(planned.registered.map((v, i) => v + peopleYear[i].registeredWithdrawals), deductible, planned.gains)).total * k
-              return cashWithoutExtra + sum(planned.taken) - (tax - baseTax)
+              const inputs = onTopOf(planned)
+              return cashWithoutExtra + sum(planned.taken) - (householdTax(inputs).total * k - baseTax) + (sum(gisFor(inputs)) * k - baseGis)
             }
             const w = solveIncreasing(cashAfter, 0, sum(balances))
             const planned = planWithdrawal(w)
-            recordTax(householdTax(taxInputs(planned.registered.map((v, i) => v + peopleYear[i].registeredWithdrawals), deductible, planned.gains)))
+            const residual = cashAfter(w)
+            recordTax(householdTax(onTopOf(planned)))
             applyWithdrawal(planned)
             recordWithdrawal(planned)
-            row.shortfall = Math.max(0, -cashAfter(w))
+            otherRegistered = mergePlans(otherRegistered, planned)
+            row.shortfall = Math.max(0, -residual)
+            row.budgetShortfall = row.shortfall
+            row.essentialShortfall = Math.max(0, row.shortfall - (row.spending - essentialNeed))
           }
+          row.fundedSpending = row.spending - row.budgetShortfall
         }
+        recordGis(taxInputs(otherRegistered.registered, deductible, undefined, otherRegistered.nonEligible))
       }
 
       for (let a = 0; a < accountCount; a++) {
         const acct = c.accounts[a]
         row.contributions += contributions[a]
         if (acct.nonRegistered) acb[a] += contributions[a]
-        if (owner[a] >= 0) {
-          if (acct.type === 'RRSP') contributedTo.rrsp[owner[a]] += contributions[a]
-          if (acct.type === 'TFSA') contributedTo.tfsa[owner[a]] += contributions[a]
-        }
         if (acct.stock) {
           // Stock purchases are added at the start of the year, pro rata.
           balances[a] += contributions[a]
           syncHoldings(a)
           growStock(a, t)
         } else {
-          balances[a] = calculateFutureValue(balances[a], contributions[a] / 12, accountReturn[a] / 12, 12)
+          // v2: the rate that compounds to this year's annual return.
+          const monthly = v2 ? Math.pow(1 + accountReturn[a], 1 / 12) - 1 : accountReturn[a] / 12
+          balances[a] = calculateFutureValue(balances[a], contributions[a] / 12, monthly, 12)
         }
       }
 
       row.guaranteedIncome = peopleYear.reduce((s, p) => s + p.pension + p.cpp + p.oas + p.gis, 0)
       const employment = peopleYear.reduce((s, p) => s + p.employment, 0)
-      row.grossIncome = row.guaranteedIncome + row.otherIncome + employment + row.withdrawal - row.reinvested
+      row.grossIncome = row.guaranteedIncome + row.otherIncome + employment + row.withdrawal - oneOff.paid - row.reinvested
       row.afterTaxIncome = Math.max(0, row.grossIncome - row.tax - payrollTotal() + withheld)
     } else {
       // The first-year withdrawal is set from the whole portfolio, before
       // any reserved one-time pot comes out (as in the original engine).
       if (t === D) strategy.initialWithdrawal = (sum(balances) / k) * strategy.initialRate
 
-      // Simple mode: the reserved one-time pot comes out first, pro rata.
-      if (oneTimePot[t] > 0) {
+      // v1 only: the reserved one-time pot comes out first, pro rata.
+      if (!v2 && oneTimePot[t] > 0) {
         const pot = planWithdrawal(Math.min(sum(balances), oneTimePot[t]))
         applyWithdrawal(pot)
         row.oneTimeExpenses = sum(pot.taken)
@@ -827,7 +982,7 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
       let target: number
       let solvedExactly = false
       if (c.strategy === 'expenses' && v2 && detailed) {
-        target = solveIncreasing(w => afterTaxCash(planWithdrawal(w)) - row.spending, 0, Math.max(available, 1))
+        target = solveIncreasing(w => afterTaxCash(planWithdrawal(w)) - row.spending - sum(contributions), 0, Math.max(available, 1))
         solvedExactly = true
       } else if (c.strategy === 'expenses' && v2) {
         // Simple mode: the target is a pre-tax income, so no tax gross-up, but
@@ -835,7 +990,7 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
         const grossCash = (w: number) => {
           const planned = planWithdrawal(w)
           const gis = sum(gisFor(taxInputs(planned.registered, noDeduction, planned.gains))) * k
-          return guaranteedBeforeGis() + gis + row.otherIncome + sum(planned.taken)
+          return guaranteedBeforeGis() + gis + row.otherIncome + employmentTotal() + sum(planned.taken)
         }
         target = solveIncreasing(w => grossCash(w) - row.spending, 0, Math.max(available, 1))
         // The solver stops at what is available; record the real gap.
@@ -866,7 +1021,7 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
       // extra RRSP/RRIF withdrawals and reinvest what is left after tax.
       let meltdownPlan: PlannedWithdrawal | null = null
       if (v2 && c.meltdown.enabled) {
-        const inputs = taxInputs(planned.registered, noDeduction, planned.gains)
+        const inputs = taxInputs(planned.registered, noDeduction, planned.gains, planned.nonEligible)
         const household = householdTax(inputs)
         const extra = zeros()
         aliveIdx.forEach((i, m) => {
@@ -875,7 +1030,7 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
         })
         if (sum(extra) > 0) {
           const mergedTaken = planned.taken.slice()
-          const extraPlan: PlannedWithdrawal = { taken: balances.map(() => 0), registered: zeros(), gains: zeros() }
+          const extraPlan: PlannedWithdrawal = { taken: balances.map(() => 0), registered: zeros(), nonEligible: zeros(), gains: zeros() }
           aliveIdx.forEach(i => {
             if (extra[i] <= 0) return
             const mine = (a: number) => c.accounts[a].taxable && owner[a] === i && (c.accounts[a].type === 'RRSP' || c.accounts[a].type === 'RRIF')
@@ -887,6 +1042,7 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
               const amount = headroom > 0 ? (cap / headroom) * take : 0
               extraPlan.taken[a] += amount
               mergedTaken[a] += amount
+              if (!isPensionIncome(a)) extraPlan.nonEligible[i] += amount
             })
             extraPlan.registered[i] += take
           })
@@ -900,10 +1056,11 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
       planned = finalPlan
       const withdrawal = sum(finalPlan.taken)
       if (meltdownPlan) row.meltdownWithdrawals = sum(meltdownPlan.taken)
-      if (!solvedExactly) row.shortfall = Math.max(0, target - withdrawal)
+      row.withdrawalShortfall = Math.max(0, target - withdrawal)
+      if (!solvedExactly) row.shortfall = row.withdrawalShortfall
 
       if (v2) {
-        const inputs = taxInputs(finalPlan.registered, noDeduction)
+        const inputs = taxInputs(finalPlan.registered, noDeduction, undefined, finalPlan.nonEligible)
         const household = householdTax(inputs)
         recordTax(household)
         recordGis(inputs)
@@ -918,7 +1075,8 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
           const registeredTotal = Math.max(1, sum(finalPlan.registered))
           const neededRegistered = finalPlan.registered.map((v, i) =>
             Math.max(0, v - (meltdownPlan?.registered[i] ?? 0) - forcedExcess * (v / registeredTotal)))
-          const neededTax = householdTax(taxInputs(neededRegistered, noDeduction)).total * k
+          const neededNonEligible = finalPlan.nonEligible.map((v, i) => (finalPlan.registered[i] > 0 ? v * (neededRegistered[i] / finalPlan.registered[i]) : 0))
+          const neededTax = householdTax(taxInputs(neededRegistered, noDeduction, undefined, neededNonEligible)).total * k
           reinvest(unneeded - Math.max(0, row.tax - neededTax), aliveIdx[0])
         }
 
@@ -964,13 +1122,43 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
       }
 
       row.guaranteedIncome = peopleYear.reduce((s, p) => s + p.pension + p.cpp + p.oas + p.gis, 0)
-      row.grossIncome = row.guaranteedIncome + row.otherIncome + withdrawal - row.reinvested
-      row.afterTaxIncome = Math.max(0, row.guaranteedIncome + row.otherIncome + withdrawal - row.tax - payrollTotal() - row.reinvested + withheld)
+      const employment = v2 ? employmentTotal() : 0
+      row.grossIncome = row.guaranteedIncome + row.otherIncome + employment + withdrawal + oneOffCash() - row.reinvested
+      row.afterTaxIncome = Math.max(0, row.guaranteedIncome + row.otherIncome + employment + withdrawal + oneOffCash() - row.tax - payrollTotal() - row.reinvested + withheld)
+
+      // Contributions still scheduled in retirement are paid from what is
+      // left after spending. Their deduction is claimed once that is known; it
+      // only lowers tax, so what was affordable stays affordable.
+      let fundedContributions = 0
+      if (v2 && sum(contributions) > 0) {
+        const share = Math.min(1, Math.max(0, row.afterTaxIncome - row.spending) / sum(contributions))
+        if (share > 0) {
+          const funded = contributions.map(amount => amount * share)
+          fundedContributions = sum(funded)
+          const deductible = zeros()
+          c.accounts.forEach((a, i) => { if (a.deductible && owner[i] >= 0) deductible[owner[i]] += funded[i] })
+          if (sum(deductible) > 0) {
+            const withDeduction = householdTax(taxInputs(finalPlan.registered, deductible, undefined, finalPlan.nonEligible))
+            row.afterTaxIncome += row.tax - withDeduction.total * k
+            recordTax(withDeduction)
+          }
+          countTowardRoom(funded)
+          contributionsAtYearEnd = funded
+        }
+      }
+
       if (detailed) {
-        row.surplus = row.afterTaxIncome - row.spending
+        row.surplus = row.afterTaxIncome - row.spending - fundedContributions
         if (row.surplus > 1 && solvedExactly) reinvest(row.surplus, aliveIdx[0])
         else if (row.surplus > 0 && c.savingsAccount >= 0) toSave = row.surplus
-        if (solvedExactly && row.surplus < -1) row.shortfall = -row.surplus
+        const deadband = (x: number) => (x > 1 ? x : 0)
+        row.budgetShortfall = deadband(row.spending - row.afterTaxIncome)
+        row.essentialShortfall = deadband(essentialNeed - row.afterTaxIncome)
+        row.fundedSpending = row.spending - row.budgetShortfall
+        // Percent-of-portfolio, guardrail and VPW plans cut spending on
+        // purpose; for them only an unfunded essential is a failure.
+        const flexible = c.spendingStrategy.kind === 'pctPortfolio' || c.spendingStrategy.kind === 'guytonKlinger' || c.spendingStrategy.kind === 'vpw'
+        row.shortfall = flexible ? row.essentialShortfall : row.budgetShortfall
       }
 
       strategy.lastWithdrawal = Math.min(target, withdrawal) / k
@@ -981,8 +1169,19 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
         if (c.accounts[a].stock) growStock(a, t)
         else balances[a] *= 1 + accountReturn[a]
       }
-      if (depletionOffset === null && sum(balances) <= 0 && target > 0) depletionOffset = t
+      if (contributionsAtYearEnd) {
+        contributionsAtYearEnd.forEach((amount, a) => {
+          if (amount <= 0) return
+          balances[a] += amount
+          if (c.accounts[a].nonRegistered) acb[a] += amount
+          if (c.accounts[a].stock) syncHoldings(a)
+          row.contributions += amount
+        })
+      }
+      if (depletionOffset === null && sum(balances) <= 0 && (target > 1 || (v2 && row.shortfall > 1))) depletionOffset = t
     }
+
+    row.shortfall += oneOff.shortfall
 
     // Saved surpluses are invested at year end.
     if (toSave > 0) {
@@ -1004,7 +1203,7 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
       if (!Number.isNaN(rrspRoom[i])) {
         if (t > 0) {
           // Vested shares are on the T4, so they earn RRSP room like salary.
-          const priorEarnings = incomeByPerson[i].employment[t - 1] + rows[t - 1].people[i].stockCompensation
+          const priorEarnings = incomeByPerson[i].employment[t - 1] + incomeByPerson[i].selfEmployment[t - 1] + rows[t - 1].people[i].stockCompensation
           rrspRoom[i] += Math.min(LIMITS.rrspRate * priorEarnings, LIMITS.rrspMax * k)
         }
         rrspRoom[i] -= contributedTo.rrsp[i]
@@ -1017,6 +1216,11 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
       }
     }
     priorTfsaWithdrawals = tfsaWithdrawals
+
+    // FHSA room: a new year's limit plus up to one year of unused room.
+    for (let i = 0; i < peopleCount; i++) {
+      fhsaYearRoom[i] = LIMITS.fhsaAnnual + Math.min(LIMITS.fhsaAnnual, Math.max(0, fhsaYearRoom[i]))
+    }
 
     peopleYear.forEach((p, i) => {
       p.investmentIncome = invOrdinary[i] + invEligible[i]
@@ -1039,6 +1243,8 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
 // Deemed disposition at the last death: registered balances are income on the
 // final return and unrealized capital gains are realized; a principal
 // residence is exempt. Probate applies to what passes through the estate.
+// Everything goes on one return, including when a couple's deaths fall in the
+// same plan year, because a spousal rollover leaves it all with the survivor.
 function computeEstate(
   c: CompiledPlan,
   rows: YearRow[],

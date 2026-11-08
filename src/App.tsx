@@ -1,4 +1,4 @@
-import { useState, useCallback, type ReactNode } from 'react'
+import { useMemo, useState, useCallback, type ReactNode } from 'react'
 import './App.css'
 import { ThemeProvider } from '@/contexts/ThemeContext'
 import { ToastProvider, useToast } from '@/contexts/ToastContext'
@@ -10,6 +10,7 @@ import { usePersistence } from '@/hooks/usePersistence'
 import { useAutoRefreshQuotes } from '@/hooks/useStockQuotes'
 import { exportToYAML, downloadYAML, uploadYAML, type ImportedPlan } from '@/lib/yaml-utils'
 import { buildShareUrl, clearShareHash, readSharePlanFromUrl } from '@/lib/share-link'
+import { diagnosePlan } from '@/lib/plan/diagnostics'
 import type { ViewId } from '@/lib/ui/route'
 import { TopBar } from '@/components/layout/TopBar'
 import { Sidebar, SidebarContent } from '@/components/layout/Sidebar'
@@ -50,7 +51,18 @@ function AppContent() {
   const [pendingSharedPlan, setPendingSharedPlan] = useState<ImportedPlan | null>(() =>
     readSharePlanFromUrl(window.location.href)
   )
-  const { activePlan, replaceActivePlan, setUiPrefs, setSelectedPersonId } = store
+  const { activePlan, replaceActivePlan, setUiPrefs, setSelectedPersonId, saveProblem, recoveryEntries, acknowledgeRecoveryEntries, now } = store
+  const diagnostics = useMemo(() => diagnosePlan(activePlan, now), [activePlan, now])
+
+  const downloadRecovery = useCallback(() => {
+    const text = JSON.stringify(recoveryEntries, null, 2)
+    const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }))
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'retire-eh-recovered-data.json'
+    link.click()
+    URL.revokeObjectURL(url)
+  }, [recoveryEntries])
 
   const applyPlan = useCallback((imported: ImportedPlan) => {
     replaceActivePlan(imported.plan)
@@ -113,7 +125,7 @@ function AppContent() {
         <Sidebar />
         <main className="min-w-0 flex-1">
           <div className="mx-auto w-full max-w-[1200px] px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
-            {(pendingSharedPlan || localStorageError) && (
+            {(pendingSharedPlan || localStorageError || saveProblem || recoveryEntries.length > 0 || diagnostics.length > 0) && (
               <div className="mb-6 space-y-3">
                 {pendingSharedPlan && (
                   <Callout
@@ -128,6 +140,35 @@ function AppContent() {
                   >
                     {pendingSharedPlan.plan.people.map(p => p.name).join(' & ')}. Loading it replaces the plan
                     currently open in this browser.
+                  </Callout>
+                )}
+                {recoveryEntries.length > 0 && (
+                  <Callout
+                    tone="danger"
+                    title="Some saved data could not be loaded"
+                    actions={
+                      <>
+                        <Button size="sm" onClick={downloadRecovery}>Download a copy</Button>
+                        <Button size="sm" onClick={acknowledgeRecoveryEntries}>Dismiss</Button>
+                      </>
+                    }
+                  >
+                    An untouched copy is kept in this browser.
+                    <ul className="mt-1 list-disc pl-5">
+                      {recoveryEntries.flatMap(e => e.problems).map(problem => <li key={problem}>{problem}</li>)}
+                    </ul>
+                  </Callout>
+                )}
+                {saveProblem && (
+                  <Callout tone="warning" title="Recent edits are not being saved">
+                    {saveProblem} Saving resumes once it is corrected.
+                  </Callout>
+                )}
+                {diagnostics.length > 0 && (
+                  <Callout tone="warning" title="Check these plan settings">
+                    <ul className="list-disc pl-5">
+                      {diagnostics.map(d => <li key={d.message}>{d.message}</li>)}
+                    </ul>
                   </Callout>
                 )}
                 {localStorageError && (

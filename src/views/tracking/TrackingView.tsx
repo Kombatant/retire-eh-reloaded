@@ -1,3 +1,4 @@
+import { isRealDate } from '@/lib/plan/diagnostics'
 import { useMemo, useState } from 'react'
 import { CartesianGrid, ComposedChart, Line, ResponsiveContainer, Scatter, Tooltip, XAxis, YAxis } from 'recharts'
 import { History, Plus, RefreshCw, Trash2 } from 'lucide-react'
@@ -164,17 +165,24 @@ function RecordForm({ onDone, hasBaseline, saveBaseline }: { onDone: () => void;
   const [updatePlan, setUpdatePlan] = useState(true)
   const people = new Map(activePlan.people.map(p => [p.id, p.name]))
   const multi = activePlan.people.length > 1
-  const validDate = /^\d{4}-\d{2}-\d{2}$/.test(date)
+  const validDate = isRealDate(date)
+  // Projections start this calendar year, so only a balance from this year
+  // can stand in for the opening amount.
+  const canUpdatePlan = validDate && Number(date.slice(0, 4)) === now.getFullYear()
 
   const save = () => {
     const balances = Object.fromEntries(activePlan.accounts.map(a => [a.id, draft[a.id] ?? a.balance]))
     const total = Object.values(balances).reduce((s, v) => s + v, 0)
     if (!hasBaseline) saveBaseline()
     addSnapshot({ id: newId('snapshot'), planId: activePlan.id, date, balances, total })
-    if (updatePlan) {
+    if (updatePlan && canUpdatePlan) {
       updateActivePlan(p => {
         let next = { ...p, asOf: date }
-        for (const [id, balance] of Object.entries(balances)) next = patchAccount(next, id, { balance })
+        // A stock account's value comes from its shares and price, so a typed
+        // balance is an observation only.
+        for (const account of p.accounts) {
+          if (account.type !== 'STOCK') next = patchAccount(next, account.id, { balance: balances[account.id] })
+        }
         return next
       })
     }
@@ -188,12 +196,20 @@ function RecordForm({ onDone, hasBaseline, saveBaseline }: { onDone: () => void;
       </Field>
       <div className="space-y-4 border-t border-border pt-5">
         {activePlan.accounts.map(a => (
-          <Field key={a.id} label={`${multi ? `${people.get(a.ownerId) ?? 'Joint'} · ` : ''}${a.label || ACCOUNT_LABELS[a.type]}`}>
+          <Field
+            key={a.id}
+            label={`${multi ? `${people.get(a.ownerId) ?? 'Joint'} · ` : ''}${a.label || ACCOUNT_LABELS[a.type]}`}
+            hint={a.type === 'STOCK' ? 'Recorded for comparison only. To change projections, update shares and prices under Savings.' : undefined}
+          >
             <NumberInput value={draft[a.id] ?? a.balance} min={0} onChange={(v) => setDraft(d => ({ ...d, [a.id]: v }))} />
           </Field>
         ))}
       </div>
-      <Checkbox checked={updatePlan} onChange={setUpdatePlan} label="Also update the plan's balances" description="Projections then start from these amounts." />
+      {canUpdatePlan ? (
+        <Checkbox checked={updatePlan} onChange={setUpdatePlan} label="Also update the plan's balances" description="Projections then start from these amounts." />
+      ) : (
+        <p className="text-xs text-fg-muted">This date isn't in the current year, so it is recorded as history and the plan's balances stay as they are.</p>
+      )}
       <div className="flex justify-end gap-2 border-t border-border pt-4">
         <Button onClick={onDone}>Cancel</Button>
         <Button variant="primary" onClick={save} disabled={!validDate}>Save snapshot</Button>

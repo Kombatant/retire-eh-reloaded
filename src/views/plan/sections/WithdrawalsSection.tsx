@@ -12,6 +12,7 @@ import { NumberInput } from '@/components/ui/NumberInput'
 import { Checkbox } from '@/components/ui/Checkbox'
 import { IconButton } from '@/components/ui/Button'
 import { Advanced } from '@/components/ui/Advanced'
+import { RRIF_EARLIEST_CONVERSION_AGE, RRIF_LATEST_CONVERSION_AGE } from '@/lib/plan/schema'
 
 const STRATEGIES: { kind: SpendingStrategy['kind']; label: string; help: string; advanced?: boolean }[] = [
   { kind: 'initialPct', label: 'Fixed withdrawal rate', help: 'Withdraw a % of savings in the first retirement year, then the same amount each year adjusted for inflation (the classic 4% rule).' },
@@ -140,17 +141,22 @@ export function WithdrawalsSection() {
         </div>
       </Card>
 
+      <Card>
+        <CardHeader title="Converting RRSPs to RRIFs" description="You choose when, at any age up to the end of the year you turn 71." />
+        <div className="space-y-3">
+          <Field label="Convert at age" className="w-48">
+            <IntegerInput value={d.rrifConversionAge} min={RRIF_EARLIEST_CONVERSION_AGE} max={RRIF_LATEST_CONVERSION_AGE} onChange={(v) => update({ rrifConversionAge: v })} />
+          </Field>
+          <p className="text-xs text-fg-muted">
+            From 65, RRIF payments qualify for the pension income credit and pension splitting, which plain RRSP withdrawals don't. The catch is a required minimum withdrawal every year, starting the year after you convert. Converting before 65 rarely helps.
+          </p>
+        </div>
+      </Card>
+
       <Advanced>
         <Card>
           <CardHeader title="RRSP, RRIF and estate" description="Tax planning for registered savings and what you leave behind." />
           <div className="space-y-4">
-            <Field
-              label="Convert RRSP to RRIF at age"
-              info="An RRSP must become a RRIF by the end of the year you turn 71; minimum withdrawals start the next year. Converting earlier lets RRIF income qualify for the pension credit and splitting at 65."
-              className="w-48"
-            >
-              <IntegerInput value={d.rrifConversionAge} min={55} max={71} onChange={(v) => update({ rrifConversionAge: v })} />
-            </Field>
             {couple && (
               <Checkbox
                 checked={d.rrifUseYoungerSpouseAge}

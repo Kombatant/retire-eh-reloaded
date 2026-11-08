@@ -217,7 +217,7 @@ const sections: LearnSection[] = [
           <strong className="text-fg"> % of portfolio</strong>, <strong className="text-fg">guardrails (Guyton-Klinger)</strong> and <strong className="text-fg">VPW</strong> let spending rise and fall with markets; in a detailed budget they never cut below essential items.
         </p>
         <p>
-          An RRSP must become a RRIF by the end of the year you turn 71, and a RRIF has a <strong className="text-fg">minimum withdrawal</strong> every year (about 5.3% at 72, rising to 20% at 95). Minimums you do not need are reinvested after tax. LIRAs unlock as LIFs (from 55) with both a minimum and a maximum.
+          You can convert an RRSP to a RRIF at any age, in whole or in part, but it must become a RRIF (or buy an annuity) by the end of the year you turn 71. From 65, RRIF payments qualify for the pension income credit and pension splitting, while plain RRSP withdrawals do not. A RRIF has a <strong className="text-fg">minimum withdrawal</strong> every year (about 5.3% at 72, rising to 20% at 95). Minimums you do not need are reinvested after tax. LIRAs unlock as LIFs (from 55) with both a minimum and a maximum.
         </p>
         <p>
           An <strong className="text-fg">RRSP meltdown</strong> withdraws extra RRSP money in low-income years to fill a target tax bracket, then reinvests it (TFSA first). It can lower lifetime tax, reduce the OAS clawback later, and shrink the RRIF that is fully taxed at death.
@@ -253,7 +253,7 @@ const sections: LearnSection[] = [
           When a spouse dies, registered accounts and TFSAs can roll over to the survivor tax-free. The survivor keeps their own benefits, a share of a DB pension (the survivor %), and a CPP survivor's pension (60% of the deceased's pension at 65+, within the CPP maximum). From then on the survivor files a single return, without pension splitting.
         </p>
         <p>
-          At the last death, RRSPs and RRIFs are added to income on the final return and other investments are treated as sold, so capital gains are taxed (a principal residence is exempt). Provincial probate fees may also apply. The estate card shows what is left for heirs.
+          At the last death, RRSPs and RRIFs are added to income on the final return and other investments are treated as sold, so capital gains are taxed (a principal residence is exempt). The estimate puts everything on one return, even when a couple's life expectancies end in the same year, because a spousal rollover leaves it all with the survivor. Provincial probate fees may also apply. The estate card shows what is left for heirs.
         </p>
       </div>
     )

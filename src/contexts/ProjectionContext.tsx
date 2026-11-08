@@ -12,9 +12,8 @@ import {
   type CashFlowRow,
   type CompiledPlan,
   type SimResult,
+  type YearRow,
 } from '@/lib/sim'
-import { buildGuaranteedIncomeSchedule, getCppIncomeAtAge, getOasIncomeAtAge } from '@/lib/calculations'
-import { OAS_MAX_ANNUAL_2026 } from '@/lib/tax'
 import { buildRetirementTaxSnapshot, type RetirementTaxSnapshot } from '@/lib/sim/taxSnapshot'
 import { retirementSpendingTarget as spendingTargetOf } from '@/lib/insights/outlook'
 import type { ProjectionDataPoint } from '@/types/projection'
@@ -40,6 +39,7 @@ interface ProjectionContextValueTyped {
   totalAnnualPension: number
   totalAnnualCpp: number
   totalAnnualOas: number
+  totalAnnualGis: number
   guaranteedIncomeSchedule: number[]
   totalPortfolio: number
   totalAnnualContributions: number
@@ -70,22 +70,22 @@ export function ProjectionProvider({ children }: { children: ReactNode }) {
   const householdRetirementAge = minCurrentAge + yearsToRetirement
   const totalAnnualIncome = people.reduce((sum, p) => sum + (p.annualIncome || 0), 0)
   const retirementSpendingTarget = spendingTargetOf(compiledPlan, simulation)
-  const totalAnnualPension = people.reduce((sum, p) => sum + (p.annualPension || 0), 0)
-  const totalAnnualCpp = people.reduce((sum, p) => {
-    const ageAtHouseholdRetirement = p.currentAge + yearsToRetirement
-    return sum + getCppIncomeAtAge(p.annualCpp, p.cppStartAge, ageAtHouseholdRetirement)
-  }, 0)
-  const totalAnnualOas = people.reduce((sum, p) => {
-    const ageAtRetirement = p.currentAge + yearsToRetirement
-    return sum + getOasIncomeAtAge(OAS_MAX_ANNUAL_2026, p.oasStartAge, ageAtRetirement)
-  }, 0)
+  // Benefits come from the simulation, so residence, start ages, deaths and
+  // partial indexation are all as projected. Plan-start dollars.
+  const retirementRow = simulation.rows[compiledPlan.drawdownStartOffset]
+  const atRetirement = (pick: (p: YearRow['people'][number]) => number) =>
+    (retirementRow ? retirementRow.people.reduce((sum, p) => sum + pick(p), 0) / retirementRow.cpi : 0)
+  const totalAnnualPension = atRetirement(p => p.pension)
+  const totalAnnualCpp = atRetirement(p => p.cpp)
+  const totalAnnualOas = atRetirement(p => p.oas)
+  const totalAnnualGis = atRetirement(p => p.gis)
   // All account types count, not only the RRSP/TFSA shown by the v1 forms.
   const totalPortfolio = activePlan.accounts.reduce((sum, acc) => sum + (acc.balance || 0), 0)
   const totalAnnualContributions = activePlan.accounts.reduce((sum, acc) => sum + (acc.contributions[0]?.amount ?? 0), 0)
 
   const guaranteedIncomeSchedule = useMemo(
-    () => buildGuaranteedIncomeSchedule({ people, householdRetirementAge, yearsToRetirement }),
-    [people, householdRetirementAge, yearsToRetirement]
+    () => simulation.rows.slice(compiledPlan.drawdownStartOffset).map(row => row.guaranteedIncome / row.cpi),
+    [simulation.rows, compiledPlan.drawdownStartOffset]
   )
 
   const projectionData = useMemo(
@@ -120,7 +120,7 @@ export function ProjectionProvider({ children }: { children: ReactNode }) {
       projectionData, conservativeProjectionData, optimisticProjectionData,
       realProjectionData, currentProjectionData: projectionData,
       householdRetirementAge, yearsToRetirement, minCurrentAge,
-      totalAnnualIncome, retirementSpendingTarget, totalAnnualPension, totalAnnualCpp, totalAnnualOas,
+      totalAnnualIncome, retirementSpendingTarget, totalAnnualPension, totalAnnualCpp, totalAnnualOas, totalAnnualGis,
       guaranteedIncomeSchedule, totalPortfolio, totalAnnualContributions, retirementTax,
     }}>
       {children}

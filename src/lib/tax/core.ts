@@ -3,12 +3,13 @@ import type { TaxBracket } from './data/2026'
 export type { TaxBracket }
 
 // Thresholds can be scaled (e.g. real-dollar value of a frozen nominal bracket).
-export function progressiveTax(income: number, brackets: TaxBracket[], thresholdScale = 1): number {
+// `frozenScale` applies to individual thresholds that are fixed in law.
+export function progressiveTax(income: number, brackets: TaxBracket[], thresholdScale = 1, frozenScale = thresholdScale): number {
   if (income <= 0) return 0
   let tax = 0
   let lower = 0
   for (const bracket of brackets) {
-    const upper = bracket.upTo * thresholdScale
+    const upper = bracket.upTo * (bracket.frozen ? frozenScale : thresholdScale)
     if (income <= lower) break
     const taxable = Math.min(income, upper) - lower
     if (taxable > 0) tax += taxable * (bracket.rate / 100)

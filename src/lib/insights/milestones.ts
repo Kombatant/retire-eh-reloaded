@@ -18,8 +18,11 @@ export function buildMilestones(plan: PlanV2, c: CompiledPlan, result: SimResult
     out.push({ year: p.birthYear + p.retirementAge, label: `${who(p.name)}Retire at ${p.retirementAge}`, kind: 'retire' })
     out.push({ year: p.birthYear + p.cppStartAge, label: `${who(p.name)}${p.province === 'QC' ? 'QPP' : 'CPP'} starts at ${p.cppStartAge}`, kind: 'benefit' })
     out.push({ year: p.birthYear + p.oas.startAge, label: `${who(p.name)}OAS starts at ${p.oas.startAge}`, kind: 'benefit' })
-    if (plan.accounts.some(a => a.ownerId === p.id && a.type === 'RRSP')) {
-      out.push({ year: p.birthYear + plan.drawdown.rrifConversionAge, label: `${who(p.name)}RRSP converts to a RRIF`, kind: 'rrif' })
+    const conversionAges = new Set(plan.accounts.flatMap(a => (
+      a.ownerId === p.id && a.type === 'RRSP' ? [a.rrifConversionAge ?? plan.drawdown.rrifConversionAge] : []
+    )))
+    for (const age of conversionAges) {
+      out.push({ year: p.birthYear + age, label: `${who(p.name)}RRSP converts to a RRIF`, kind: 'rrif' })
     }
     out.push({ year: p.birthYear + p.lifeExpectancy, label: `${who(p.name)}Plan to age ${p.lifeExpectancy}`, kind: 'life' })
   })

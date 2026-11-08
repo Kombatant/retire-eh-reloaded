@@ -8,7 +8,7 @@ import { PROVINCES, type PersonV2, type ProvinceCode } from '@/lib/plan/schema'
 import { cppAmountAt65, primarySalary } from '@/lib/plan/legacy-view'
 import { estimateCppFromHistory } from '@/lib/benefits/cpp'
 import {
-  CPP_MAX_START_AGE, CPP_MIN_START_AGE, OAS_MAX_START_AGE, OAS_MIN_START_AGE, getCppIncomeAtAge, getOasIncomeAtAge,
+  CPP_MIN_START_AGE, maxPensionStartAge, OAS_MAX_START_AGE, OAS_MIN_START_AGE, getCppIncomeAtAge, getOasIncomeAtAge,
 } from '@/lib/calculations'
 import { OAS_MAX_ANNUAL_2026, provinceName } from '@/lib/tax'
 import { newId } from '@/lib/plan/ids'
@@ -59,7 +59,8 @@ export function HouseholdSection() {
           <p className="text-sm text-fg-muted">Planning for one person. Add a spouse or partner to plan as a couple.</p>
         )}
         <div className="flex gap-2">
-          <Button size="sm" icon={UserPlus} onClick={add}>Add person</Button>
+          {/* Tax splitting and survivor rules are defined for one or two people. */}
+          {people.length < 2 && <Button size="sm" icon={UserPlus} onClick={add}>Add person</Button>}
           {people.length > 1 && (
             <Button size="sm" variant="ghost" icon={Trash2} onClick={remove} className="hover:text-danger">
               Remove {person.name}
@@ -234,10 +235,10 @@ function BenefitsCard({ person }: { person: PersonV2 }) {
         )}
 
         <div className="grid grid-cols-1 gap-4 border-t border-border pt-5 sm:grid-cols-3">
-          <Field label={`${pensionName} start age`} info="60 to 70. Each month before 65 lowers the pension by 0.6%; each month after raises it by 0.7%, for life.">
+          <Field label={`${pensionName} start age`} info={`60 to ${maxPensionStartAge(person.province)}. Each month before 65 lowers the pension by 0.6%; each month after raises it by 0.7%, for life.`}>
             <Select value={person.cppStartAge} onChange={(e) => update({ cppStartAge: Number(e.target.value) })}>
-              {range(CPP_MIN_START_AGE, CPP_MAX_START_AGE).map(age => {
-                const amount = getCppIncomeAtAge(amountAt65, age, age)
+              {range(CPP_MIN_START_AGE, maxPensionStartAge(person.province)).map(age => {
+                const amount = getCppIncomeAtAge(amountAt65, age, age, maxPensionStartAge(person.province))
                 return <option key={age} value={age}>{amount > 0 ? `${age} · ${money(amount)}/yr` : age}</option>
               })}
             </Select>

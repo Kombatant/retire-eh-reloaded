@@ -42,7 +42,9 @@ describe('RRIF and LIF rules', () => {
     expect(row.withdrawal).toBeCloseTo(500000 * 0.0528, 2)
     expect(row.people[0].minimumWithdrawals).toBeCloseTo(26400, 2)
     expect(row.reinvested).toBeGreaterThan(10000)
-    expect(row.balancesEnd[1]).toBeCloseTo(row.reinvested, 6)
+    // Room isn't tracked here, so the TFSA takes only one year's limit.
+    expect(row.balancesEnd[1]).toBeCloseTo(7000, 6)
+    expect(row.deposits).toBeCloseTo(row.reinvested, 6)
   })
 
   it('can base the minimum on the younger spouse’s age', () => {

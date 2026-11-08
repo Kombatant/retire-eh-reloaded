@@ -70,7 +70,8 @@ export const personSchema = z.object({
   retirementAge: age,
   lifeExpectancy: age.default(95),
   cpp: cppSchema.default({ mode: 'amount', amountAt65: MAX_CPP_ANNUAL_2026 }),
-  cppStartAge: z.number().int().min(60).max(70).default(65),
+  // Up to 70 for the CPP and 72 for the QPP; the calculation clamps by province.
+  cppStartAge: z.number().int().min(60).max(72).default(65),
   oas: z.object({
     startAge: z.number().int().min(65).max(70).default(65),
     yearsInCanadaAfter18: z.number().int().min(0).max(47).default(40),
@@ -117,6 +118,12 @@ const accountBase = {
 }
 
 const lockedInJurisdiction = provinceSchema.or(z.literal('FED')).optional()
+
+// An RRSP can become a RRIF at any age, but no later than the end of the year
+// the holder turns 71.
+export const RRIF_LATEST_CONVERSION_AGE = 71
+export const RRIF_EARLIEST_CONVERSION_AGE = 18
+const rrifConversionAge = z.number().int().min(RRIF_EARLIEST_CONVERSION_AGE).max(RRIF_LATEST_CONVERSION_AGE)
 
 // --- Individual stock holdings (stock portfolio account) ---------------------
 
@@ -195,7 +202,9 @@ export const stockSalePlanSchema = z.discriminatedUnion('kind', [
 export type StockSalePlan = z.infer<typeof stockSalePlanSchema>
 
 export const accountSchema = z.discriminatedUnion('type', [
-  z.object({ ...accountBase, type: z.literal('RRSP') }),
+  // `rrifConversionAge` overrides the plan's setting for this account, so part
+  // of an RRSP can convert early by holding it as a separate account.
+  z.object({ ...accountBase, type: z.literal('RRSP'), rrifConversionAge: rrifConversionAge.optional() }),
   z.object({ ...accountBase, type: z.literal('RRIF') }),
   z.object({ ...accountBase, type: z.literal('TFSA') }),
   z.object({
@@ -376,7 +385,7 @@ export const drawdownSchema = z.object({
   customOrder: z.array(accountTypeSchema)
     .default(['CASH', 'STOCK', 'NONREG', 'RRIF', 'RRSP', 'LIF', 'LIRA', 'FHSA', 'TFSA'])
     .transform(order => [...order, ...ACCOUNT_TYPES.filter(type => !order.includes(type))]),
-  rrifConversionAge: z.number().int().min(55).max(71).default(71),
+  rrifConversionAge: rrifConversionAge.default(RRIF_LATEST_CONVERSION_AGE),
   rrifUseYoungerSpouseAge: z.boolean().default(false),
   meltdown: z.object({
     enabled: z.boolean().default(false),

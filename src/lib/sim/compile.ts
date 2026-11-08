@@ -55,6 +55,9 @@ export function compilePlan(plan: PlanV2, { startYear, rules = 'v2' }: CompileOp
     yearsInCanadaAfter18: p.oas.yearsInCanadaAfter18,
     rrspRoom: p.room?.rrsp,
     tfsaRoom: p.room?.tfsa,
+    fhsaRoom: p.room?.fhsa,
+    fhsaLifetimeRoom: Math.max(0, TAX_2026.limits.fhsaLifetime - plan.accounts.reduce(
+      (total, a) => total + (a.type === 'FHSA' && a.ownerId === p.id ? a.lifetimeContributed : 0), 0)),
   }))
   const personIndex = new Map(people.map((p, i) => [p.id, i]))
 
@@ -113,7 +116,11 @@ export function compilePlan(plan: PlanV2, { startYear, rules = 'v2' }: CompileOp
           }
         : NO_YIELDS,
       interestOnly: a.type === 'CASH',
-      lifetimeRoom: a.type === 'FHSA' ? Math.max(0, TAX_2026.limits.fhsaLifetime - a.lifetimeContributed) : Infinity,
+      rrifConversionAge: a.type === 'RRSP' ? a.rrifConversionAge : undefined,
+      openedYear: a.type === 'FHSA' ? a.openedYear : undefined,
+      lockedInJurisdiction: a.type === 'LIRA' || a.type === 'LIF'
+        ? a.jurisdiction ?? (owner >= 0 ? people[owner].province : undefined)
+        : undefined,
       orderRank: orderRank(a.type),
       allocation: accountAllocation(a),
       stock: null,
@@ -179,7 +186,7 @@ export function compilePlan(plan: PlanV2, { startYear, rules = 'v2' }: CompileOp
   const syntheticAccount = (id: string, type: 'TFSA' | 'NONREG', ownerIndex: number): CompiledAccount => ({
     id, type, ownerIndex, taxable: false, initialBalance: 0, contributions: [], synthetic: true,
     expectedReturnPct: plan.assumptions.expectedReturn, nonRegistered: type === 'NONREG' && rules === 'v2',
-    deductible: false, initialAcb: 0, yields: NO_YIELDS, interestOnly: false, lifetimeRoom: Infinity,
+    deductible: false, initialAcb: 0, yields: NO_YIELDS, interestOnly: false,
     orderRank: orderRank(type),
     allocation: null,
     stock: null,
@@ -243,6 +250,9 @@ export function compilePlan(plan: PlanV2, { startYear, rules = 'v2' }: CompileOp
   const incomes: CompiledIncome[] = plan.incomes.flatMap(stream => {
     const owner = personIndex.get(stream.ownerId)
     if (owner === undefined) return []
+    // Already received: it is in the balances, and must not be paid again
+    // when the projection's first year moves forward.
+    if (stream.frequency === 'oneTime' && offsetOf(stream.from, 0) < 0) return []
     const flow = incomeFlow(stream, offsetOf, years)
     const isRsu = stream.kind === 'rsu' && rules === 'v2'
     const deposit = rules === 'v2' && stream.frequency === 'oneTime' && !isRsu ? depositAccountFor(owner) : -1
@@ -321,7 +331,8 @@ export function compilePlan(plan: PlanV2, { startYear, rules = 'v2' }: CompileOp
 
   // Forced RRIF/LIF minimums and stock sell plans can raise cash that is not
   // needed for spending; it is reinvested in a non-registered account.
-  const hasRegistered = accounts.some(a => a.taxable || a.stock)
+  // Automatic TFSA deposits also need somewhere to overflow to.
+  const hasRegistered = accounts.some(a => a.taxable || a.stock || a.type === 'TFSA')
   const reinvestAccount = rules === 'v2' && hasRegistered && people.length > 0 ? depositAccountFor(0) : -1
 
   const strategy = plan.drawdown.strategy

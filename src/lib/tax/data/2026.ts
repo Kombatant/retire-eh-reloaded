@@ -12,6 +12,7 @@ import type { ProvinceCode } from '@/lib/plan/schema'
 // - Quebec: Revenu Québec 2026 (unchanged from the original estimator).
 // - OAS/GIS: Canada.ca OAS payment amounts, October–December 2026.
 // - Dividend tax credit rates are the published 2025 rates; review annually.
+// - Not modelled: BC's Budget 2026 proposal to pause indexation for 2027-2030.
 //
 // Updating for a new year: copy this file, update every figure from the same
 // sources, and add golden cases to src/test/tax-provinces.test.ts.
@@ -19,6 +20,8 @@ import type { ProvinceCode } from '@/lib/plan/schema'
 export interface TaxBracket {
   upTo: number
   rate: number // percent
+  // This threshold is fixed in law even where the province's others are indexed.
+  frozen?: boolean
 }
 
 export interface ProvinceTaxData {
@@ -89,7 +92,7 @@ export interface TaxYearData {
     cpp: { baseRate: number; firstAdditionalRate: number; secondAdditionalRate: number }
     qpp: { baseRate: number; firstAdditionalRate: number; secondAdditionalRate: number }
     ei: { maxInsurable: number; rate: number; quebecRate: number }
-    qpip: { maxInsurable: number; rate: number }
+    qpip: { maxInsurable: number; rate: number; selfEmployedRate: number }
   }
 }
 
@@ -124,8 +127,8 @@ export const TAX_2026: TaxYearData = {
     }),
     PE: province({
       name: 'Prince Edward Island',
-      brackets: b([[33928, 9.5], [65820, 13.47], [106890, 16.6], [142520, 17.62], [200000, 19], [INF, 20]]),
-      creditRatePct: 9.65, basicPersonal: 15000, ageAmount: 6510, ageThreshold: 36600, pensionAmount: 1000,
+      brackets: b([[33928, 9.5], [65820, 13.47], [106890, 16.6], [142250, 17.62], [200000, 19], [INF, 20]]),
+      creditRatePct: 9.5, basicPersonal: 15000, ageAmount: 6510, ageThreshold: 36600, pensionAmount: 1000,
       eligibleDividendCreditPct: 10.5,
       // PEI does not index its personal income tax system.
       bracketsIndexed: false, creditsIndexed: false,
@@ -150,17 +153,18 @@ export const TAX_2026: TaxYearData = {
     }),
     ON: province({
       name: 'Ontario',
-      brackets: b([[53891, 5.05], [107785, 9.15], [150000, 11.16], [220000, 12.16], [INF, 13.16]]),
+      // The $150,000 and $220,000 thresholds are set in law and are not indexed.
+      brackets: [...b([[53891, 5.05], [107785, 9.15]]), { upTo: 150000, rate: 11.16, frozen: true }, { upTo: 220000, rate: 12.16, frozen: true }, { upTo: INF, rate: 13.16 }],
       creditRatePct: 5.05, basicPersonal: 12989, ageAmount: 6342, ageThreshold: 47210, pensionAmount: 1796,
       eligibleDividendCreditPct: 10,
     }),
     MB: province({
       name: 'Manitoba',
-      brackets: b([[47564, 10.8], [101200, 12.75], [INF, 17.4]]),
+      brackets: b([[47000, 10.8], [100000, 12.75], [INF, 17.4]]),
       creditRatePct: 10.8, basicPersonal: 15780, ageAmount: 3728, ageThreshold: 27749, pensionAmount: 1000,
       eligibleDividendCreditPct: 8,
-      // Manitoba froze its basic personal amount from 2025.
-      creditsIndexed: false,
+      // Manitoba stopped indexing its thresholds and basic personal amount from 2025.
+      bracketsIndexed: false, creditsIndexed: false,
     }),
     SK: province({
       name: 'Saskatchewan',
@@ -247,7 +251,7 @@ export const TAX_2026: TaxYearData = {
     cpp: { baseRate: 0.0495, firstAdditionalRate: 0.01, secondAdditionalRate: 0.04 },
     qpp: { baseRate: 0.053, firstAdditionalRate: 0.01, secondAdditionalRate: 0.04 },
     ei: { maxInsurable: 68900, rate: 0.0163, quebecRate: 0.013 },
-    qpip: { maxInsurable: 103000, rate: 0.0043 },
+    qpip: { maxInsurable: 103000, rate: 0.0043, selfEmployedRate: 0.00764 },
   },
 }
 

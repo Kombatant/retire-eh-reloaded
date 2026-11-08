@@ -24,6 +24,8 @@ The application is 100% pure TypeScript (React + Vite). All calculations run cli
 - **Unified engine** (`src/lib/sim/`):
   - `compilePlan(plan, { startYear })` resolves a v2 plan once.
   - `simulate(compiled, marketPath)` runs a year-by-year household simulation in nominal dollars.
+  - One-time costs paid from savings (gifts, debt left after a sale, a replacement home) go through `fundOneOff`, so they are withdrawn, taxed and reported like any other withdrawal.
+  - `YearRow.shortfall` decides whether a year counts as funded: unfunded budget for `expenses`/`initialPct`, unfunded essentials for strategies that flex spending, and the missed withdrawal in simple mode. `budgetShortfall`, `essentialShortfall` and `withdrawalShortfall` report each part.
   - `legacyAdapter.ts` turns the output into the series the existing charts use.
   - Deterministic projections, scenario bands and (later) Monte Carlo and backtests all reuse `simulate`.
 - **Risk** (`src/lib/sim/risk.ts`, `paths/`): Monte Carlo (correlated lognormal asset returns plus AR(1) inflation, seeded), historical backtest over `src/data/historical/canada-annual.json`, and crash overlays. All run on `simulate`.
@@ -107,6 +109,9 @@ Provider order in `App.tsx`: ThemeProvider › ToastProvider › RouteProvider �
 
 - The plan data model is versioned (`src/lib/plan/schema.ts`, zod, `schemaVersion: 2`). It is the single source of truth for persistence, YAML export and share links.
 - Every external plan source (YAML, share links, stored plans) goes through `parsePlanData` in `src/lib/plan/migrate.ts`. Older v1 files are migrated forward there.
+- Don't tighten `planSchema` for things the engine merely can't honour: a schema failure stops a plan loading or saving. Report them from `diagnosePlan` (`src/lib/plan/diagnostics.ts`) instead.
+- Stored data that can't be read is copied untouched to `retireEh.v2.recovery` before anything overwrites it (`loadStoreWithRecovery`, `preserveRecovery`).
+- Results that arrive later (quotes) use `updatePlan(id, …)`, so they reach the plan that asked for them.
 - `PlanStoreProvider` (`src/contexts/PlanStoreContext.tsx`) owns all saved plans, the active plan id, UI preferences (`showRealValues`, `detailLevel`) and person selection, via `useReducer`.
   - It persists everything under one localStorage key, `retireEh.v2`.
   - On first load it migrates the original loose keys.
@@ -128,6 +133,7 @@ Provider order in `App.tsx`: ThemeProvider › ToastProvider › RouteProvider �
 - `tax-provinces`: hand-computed golden tax values, every jurisdiction, payroll, splitting, OAS/GIS/CPP.
 - `sim-v2`, `sim-accounts`, `sim-spending`, `sim-drawdown`: engine behaviour (tax ownership, refunds, account types, room, income streams, budgets, real estate, RRIF/LIF, strategies, survivors, estate).
 - `sim-risk`, `rng`: Monte Carlo, backtest, crash scenarios.
+- `audit-regressions`: scenarios the engine once got wrong (funding verdicts, one-time costs, annual returns, pension eligibility, payroll, LIF jurisdiction, room limits, past events, storage recovery, plan diagnostics).
 - `insights`, `outlook`: Sankey, CSV, FI metrics, milestones, comparison, brackets; goal outlook, income sources, money-lasts.
 - `cpp-history`: CPP/QPP estimate from work history.
 - `sim-stocks`, `stock-quotes`: stock holdings, RSU/ESPP, sell plans, scenarios, quote providers (mocked fetch).

@@ -22,10 +22,12 @@ export interface RetirementOutlook {
 
 export function retirementOutlook(
   goal: RetirementGoalResult & { projectedAnnualIncome: number; afterTaxProjectedAnnualIncome: number },
-  opts: { effectiveTaxRate?: number; afterTaxAnnualIncome?: number; taxSummary?: RetirementTaxSnapshot | null },
+  // `planFunded` is false when the simulation itself ran short: reaching the
+  // goal on paper can't be called on track if the money doesn't arrive.
+  opts: { effectiveTaxRate?: number; afterTaxAnnualIncome?: number; taxSummary?: RetirementTaxSnapshot | null; planFunded?: boolean },
 ): RetirementOutlook {
   const taxAware = opts.effectiveTaxRate !== undefined && opts.effectiveTaxRate > 0
-  const onTrack = goal.progress >= 100 && (taxAware ? goal.afterTaxProgress >= 100 : true)
+  const onTrack = goal.progress >= 100 && (taxAware ? goal.afterTaxProgress >= 100 : true) && opts.planFunded !== false
   const tax = opts.taxSummary
 
   // The goal values delayed CPP/OAS by levelizing the benefit stream. Keep the
@@ -46,7 +48,7 @@ export function retirementOutlook(
   }
 }
 
-export type IncomeSourceKey = 'withdrawals' | 'cpp' | 'oas' | 'pension'
+export type IncomeSourceKey = 'withdrawals' | 'cpp' | 'oas' | 'gis' | 'pension'
 
 export interface IncomeSource {
   key: IncomeSourceKey
@@ -62,6 +64,7 @@ export function retirementIncomeSources(input: {
   withdrawalRatePct: number
   annualCpp: number
   annualOas: number
+  annualGis?: number
   annualPension: number
   showRealValues: boolean
   inflationRatePct: number
@@ -72,6 +75,7 @@ export function retirementIncomeSources(input: {
     { key: 'withdrawals', amount: input.portfolioAfterGifts * (input.withdrawalRatePct / 100) },
     { key: 'cpp', amount: input.annualCpp * inflate },
     { key: 'oas', amount: input.annualOas * inflate },
+    { key: 'gis', amount: (input.annualGis ?? 0) * inflate },
     { key: 'pension', amount: input.annualPension * inflate },
   ]
   return sources.filter(s => s.amount > 0)

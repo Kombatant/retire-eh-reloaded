@@ -5,8 +5,9 @@ export interface SankeyLink { source: number; target: number; value: number }
 export interface SankeyData { nodes: SankeyNode[]; links: SankeyLink[]; total: number }
 
 // One year's cash flow: every source of cash flows into a single hub, and the
-// hub flows out to tax, savings and spending. Spending is what remains, so
-// the two sides always balance. Zero flows are dropped (they break layout).
+// hub flows out to tax, savings and spending. Spending is what remains, plus
+// any budget nothing paid for, which shows as its own source so the two sides
+// still balance. Zero flows are dropped (they break layout).
 export function buildSankeyData(row: YearRow, scale = 1): SankeyData {
   const sum = (pick: (p: YearRow['people'][number]) => number) => row.people.reduce((s, p) => s + pick(p), 0)
   const sources: [string, number][] = [
@@ -20,6 +21,7 @@ export function buildSankeyData(row: YearRow, scale = 1): SankeyData {
     // The tax on vesting shares is paid by selling some of them, not from cash.
     ['Shares sold for tax', row.stockTaxWithheld],
   ]
+  if (row.budgetShortfall > 0) sources.push(['Unfunded spending', row.budgetShortfall])
   const inflow = sources.reduce((s, [, v]) => s + Math.max(0, v), 0)
 
   const taxes: [string, number][] = [
@@ -30,12 +32,14 @@ export function buildSankeyData(row: YearRow, scale = 1): SankeyData {
   ]
   const savings = row.contributions + row.reinvested + row.saved
   const debt = Math.min(row.debtPayments, row.spending)
-  const committed = taxes.reduce((s, [, v]) => s + Math.max(0, v), 0) + savings + debt
+  const oneTime = row.oneTimeExpenses
+  const committed = taxes.reduce((s, [, v]) => s + Math.max(0, v), 0) + savings + debt + oneTime
   const remaining = inflow - committed
   const uses: [string, number][] = [
     ...taxes,
     ['Savings & contributions', savings],
     ['Debt payments', debt],
+    ['One-time costs', oneTime],
     ['Spending', Math.max(0, remaining)],
   ]
   // Outflows above inflow are funded from elsewhere (e.g. a deficit).

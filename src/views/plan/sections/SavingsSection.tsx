@@ -4,7 +4,9 @@ import { usePlanStore } from '@/contexts/PlanStoreContext'
 import { useProjectionContext } from '@/contexts/ProjectionContext'
 import { useDetailLevel } from '@/hooks/useDetailLevel'
 import { addAccount, deleteAccount, patchAccount, setAccountContributionRule } from '@/lib/plan/edits'
-import { ACCOUNT_TYPES, type AccountType, type AccountV2 } from '@/lib/plan/schema'
+import { ACCOUNT_TYPES, PROVINCES, RRIF_EARLIEST_CONVERSION_AGE, RRIF_LATEST_CONVERSION_AGE, type AccountType, type AccountV2, type ProvinceCode } from '@/lib/plan/schema'
+import { IntegerInput } from '@/components/ui/IntegerInput'
+import { provinceName } from '@/lib/tax/labels'
 import { ACCOUNT_DESCRIPTIONS, ACCOUNT_GROUP_LABELS, ACCOUNT_LABELS, accountGroup, accountValue, type AccountGroup } from '@/lib/plan/accountGroups'
 import { newId } from '@/lib/plan/ids'
 import { money } from '@/lib/formatting'
@@ -262,6 +264,43 @@ function AccountEditor({ account }: { account: AccountV2 }) {
       {account.type === 'FHSA' && (
         <Field label="Contributed so far (lifetime)" hint="FHSA lifetime limit is $40,000.">
           <NumberInput value={account.lifetimeContributed} min={0} max={40000} onChange={(v) => update({ lifetimeContributed: v })} />
+        </Field>
+      )}
+
+      {account.type === 'RRSP' && (
+        <Advanced>
+          <Field
+            label="Convert this account to a RRIF at age"
+            info="Overrides the age under Withdrawals for this account. To convert only part of an RRSP, enter that part as a separate RRSP account with its own age."
+          >
+            <div className="flex items-center gap-2">
+              <IntegerInput
+                className="w-24"
+                value={account.rrifConversionAge ?? activePlan.drawdown.rrifConversionAge}
+                min={RRIF_EARLIEST_CONVERSION_AGE}
+                max={RRIF_LATEST_CONVERSION_AGE}
+                onChange={(v) => update({ rrifConversionAge: v })}
+              />
+              {account.rrifConversionAge !== undefined && (
+                <button type="button" className="text-[13px] font-medium text-fg-secondary hover:text-fg" onClick={() => update({ rrifConversionAge: undefined })}>
+                  Use the plan's age
+                </button>
+              )}
+            </div>
+          </Field>
+        </Advanced>
+      )}
+
+      {(account.type === 'LIRA' || account.type === 'LIF') && (
+        <Field label="Pension rules" info="The jurisdiction whose pension law governs this account. It can differ from where you live, for example with a federally regulated employer. Quebec has no maximum withdrawal from age 55; others use a typical provincial formula.">
+          <Select
+            value={account.jurisdiction ?? ''}
+            onChange={(e) => update({ jurisdiction: e.target.value === '' ? undefined : e.target.value as ProvinceCode | 'FED' })}
+          >
+            <option value="">Where I live</option>
+            <option value="FED">Federal</option>
+            {PROVINCES.map(code => <option key={code} value={code}>{provinceName(code)}</option>)}
+          </Select>
         </Field>
       )}
 

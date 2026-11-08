@@ -3,8 +3,9 @@ import { usePlanStore } from '@/contexts/PlanStoreContext'
 import { useAssumptions } from '@/contexts/AssumptionsContext'
 import { useProjectionContext } from '@/contexts/ProjectionContext'
 import { useRetirementGoal } from '@/hooks/useRetirementGoal'
-import { getPortfolioAtRetirement } from '@/lib/calculations'
+import { getPortfolioAtRetirement, giftsAfterRetirement } from '@/lib/calculations'
 import { moneyLasts, retirementOutlook } from '@/lib/insights/outlook'
+import { runSucceeded } from '@/lib/sim/risk'
 
 // Everything the headline views need: the goal, whether the plan is on track,
 // retirement income, and how long the money lasts. Recomputed on every edit.
@@ -27,13 +28,18 @@ export function usePlanOutlook() {
     currentAnnualContributions: projection.totalAnnualContributions,
     currentPortfolio: projection.totalPortfolio,
     showRealValues: assumptions.showRealValues,
-    plannedGifts: assumptions.plannedGifts,
+    plannedGifts: giftsAfterRetirement(assumptions.plannedGifts, projection.householdRetirementAge),
     effectiveTaxRate: tax?.effectiveRrspTaxRate,
   })
 
   const outlook = useMemo(
-    () => retirementOutlook(goal, { effectiveTaxRate: tax?.effectiveRrspTaxRate, afterTaxAnnualIncome: tax?.afterTaxIncome, taxSummary: tax }),
-    [goal, tax],
+    () => retirementOutlook(goal, {
+      effectiveTaxRate: tax?.effectiveRrspTaxRate,
+      afterTaxAnnualIncome: tax?.afterTaxIncome,
+      taxSummary: tax,
+      planFunded: runSucceeded(projection.simulation),
+    }),
+    [goal, tax, projection.simulation],
   )
   const lasts = useMemo(
     () => moneyLasts(activePlan, projection.compiledPlan, projection.simulation),

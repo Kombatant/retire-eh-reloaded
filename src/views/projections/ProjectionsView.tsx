@@ -4,7 +4,7 @@ import { useProjectionContext } from '@/contexts/ProjectionContext'
 import { useAssumptions } from '@/contexts/AssumptionsContext'
 import { useSubView } from '@/hooks/useSubView'
 import { useDetailLevel } from '@/hooks/useDetailLevel'
-import { getPortfolioAtRetirement, CPP_BASELINE_AGE, CPP_MAX_START_AGE, CPP_MIN_START_AGE, OAS_BASELINE_AGE, OAS_MAX_START_AGE, getCppIncomeAtAge, getOasIncomeAtAge } from '@/lib/calculations'
+import { getPortfolioAtRetirement, giftsAfterRetirement, CPP_BASELINE_AGE, CPP_MIN_START_AGE, maxPensionStartAge, OAS_BASELINE_AGE, OAS_MAX_START_AGE, getCppIncomeAtAge, getOasIncomeAtAge } from '@/lib/calculations'
 import { cppAmountAt65, primarySalary } from '@/lib/plan/legacy-view'
 import { hasStock } from '@/lib/insights/stockScenarios'
 import { buildAccountBreakdown } from '@/lib/insights/accountBreakdown'
@@ -192,7 +192,7 @@ function DrawdownPanel() {
           inflationRate={assumptions.inflationRate}
           startAge={startAge}
           showRealValues={assumptions.showRealValues}
-          plannedGifts={assumptions.plannedGifts}
+          plannedGifts={giftsAfterRetirement(assumptions.plannedGifts, projection.householdRetirementAge)}
           minCurrentAge={projection.minCurrentAge}
         />
       </Card>
@@ -235,8 +235,8 @@ function BenefitTiming() {
             <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
               <BenefitTable
                 title={pension}
-                ages={[CPP_MIN_START_AGE, 62, CPP_BASELINE_AGE, 67, CPP_MAX_START_AGE]}
-                annualAt={(age) => getCppIncomeAtAge(at65, age, age)}
+                ages={[CPP_MIN_START_AGE, 62, CPP_BASELINE_AGE, 67, maxPensionStartAge(person.province)]}
+                annualAt={(age) => getCppIncomeAtAge(at65, age, age, maxPensionStartAge(person.province))}
                 selected={person.cppStartAge}
               />
               <BenefitTable

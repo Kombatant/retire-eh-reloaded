@@ -208,7 +208,7 @@ function BracketRoom() {
         {row.people.map((p, i) => {
           if (!p.alive) return null
           const person = compiledPlan.people[i]
-          const position = bracketPosition(p.taxableIncome / row.cpi, person.province)
+          const position = bracketPosition(p.taxableIncome / row.cpi, person.province, 1 / row.cpi)
           return (
             <Stat
               key={person.id}

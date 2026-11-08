@@ -18,8 +18,12 @@ export interface IncomeTaxInput {
   employment: number
   // Registered pension plan income and annuities: eligible pension income at any age.
   pension: number
-  // RRSP/RRIF/LIF withdrawals: eligible pension income (as RRIF income) at 65+.
+  // All RRSP/RRIF/LIF/FHSA withdrawals. Taxable income in every case.
   registeredWithdrawals: number
+  // The part of registeredWithdrawals that is not eligible pension income,
+  // such as a withdrawal from an RRSP not yet converted to a RRIF.
+  nonEligibleRegistered?: number
+  selfEmployment?: number
   cpp: number
   oas: number
   otherOrdinary: number
@@ -58,8 +62,9 @@ export function emptyIncome(province: ProvinceCode, age: number): IncomeTaxInput
 }
 
 // Eligible pension income for the pension credit and for splitting.
-export function eligiblePensionIncome(input: Pick<IncomeTaxInput, 'age' | 'pension' | 'registeredWithdrawals'>): number {
-  return Math.max(0, input.pension) + (input.age >= 65 ? Math.max(0, input.registeredWithdrawals) : 0)
+export function eligiblePensionIncome(input: Pick<IncomeTaxInput, 'age' | 'pension' | 'registeredWithdrawals' | 'nonEligibleRegistered'>): number {
+  const registered = Math.max(0, input.registeredWithdrawals - (input.nonEligibleRegistered ?? 0))
+  return Math.max(0, input.pension) + (input.age >= 65 ? registered : 0)
 }
 
 export function computeIncomeTax(input: IncomeTaxInput, opts: TaxOptions = {}): IncomeTaxResult {
@@ -67,11 +72,13 @@ export function computeIncomeTax(input: IncomeTaxInput, opts: TaxOptions = {}): 
   const deflator = opts.deflator ?? 1
   const fed = data.federal
   const prov = data.provinces[input.province]
-  const payroll = payrollContributions(input.employment, input.province, data)
+  const selfEmployment = Math.max(0, input.selfEmployment ?? 0)
+  const payroll = payrollContributions(input.employment, input.province, data, { age: input.age, selfEmployment })
 
   const grossedUpDividends = Math.max(0, input.eligibleDividends) * (1 + fed.eligibleDividendGrossUp)
   const netIncome = Math.max(0,
     Math.max(0, input.employment) +
+    selfEmployment +
     Math.max(0, input.pension) +
     Math.max(0, input.registeredWithdrawals) +
     Math.max(0, input.cpp) +
@@ -81,7 +88,8 @@ export function computeIncomeTax(input: IncomeTaxInput, opts: TaxOptions = {}): 
     Math.max(0, input.capitalGains) * CAPITAL_GAINS_INCLUSION +
     input.pensionSplit -
     Math.max(0, input.rrspDeduction) -
-    payroll.pensionEnhanced,
+    payroll.pensionEnhanced -
+    payroll.selfEmployedEmployerBase,
   )
 
   const oasClawback = Math.min(
@@ -107,7 +115,7 @@ export function computeIncomeTax(input: IncomeTaxInput, opts: TaxOptions = {}): 
   // --- Provincial
   const scaleBrackets = prov.bracketsIndexed ? 1 : deflator
   const scaleCredits = prov.creditsIndexed ? 1 : deflator
-  const basicProvincial = progressiveTax(taxableIncome, prov.brackets, scaleBrackets)
+  const basicProvincial = progressiveTax(taxableIncome, prov.brackets, scaleBrackets, deflator)
   const provincialDividendCredit = grossedUpDividends * (prov.eligibleDividendCreditPct / 100)
   let provincial: number
   let healthPremium = 0
@@ -142,7 +150,7 @@ export function computeIncomeTax(input: IncomeTaxInput, opts: TaxOptions = {}): 
       const withSurtax = provincial + surtax
       const reduction = Math.min(withSurtax, Math.max(0, 2 * data.ontario.taxReductionBasic - withSurtax))
       provincial = withSurtax - reduction
-      healthPremium = ontarioHealthPremium(taxableIncome, data)
+      healthPremium = ontarioHealthPremium(taxableIncome, data, deflator)
     } else if (input.province === 'BC') {
       const r = data.britishColumbia
       const reduction = Math.max(0, r.reductionMax - r.reductionRate * Math.max(0, netIncome - r.reductionThreshold))
@@ -163,12 +171,15 @@ export function computeIncomeTax(input: IncomeTaxInput, opts: TaxOptions = {}): 
   }
 }
 
-export function ontarioHealthPremium(taxableIncome: number, data: TaxYearData = getTaxYear()): number {
+// The premium's bands are fixed in nominal dollars, so it is worked out in the
+// year's own dollars and converted back.
+export function ontarioHealthPremium(taxableIncome: number, data: TaxYearData = getTaxYear(), deflator = 1): number {
+  const nominalIncome = taxableIncome / deflator
   let premium = 0
   for (const [from, base, rate, cap] of data.ontario.healthPremium) {
-    if (taxableIncome > from) premium = Math.min(cap, base + rate * (taxableIncome - from))
+    if (nominalIncome > from) premium = Math.min(cap, base + rate * (nominalIncome - from))
   }
-  return premium
+  return premium * deflator
 }
 
 // Combined marginal rate on one more dollar of ordinary income, in percent.

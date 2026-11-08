@@ -3,24 +3,25 @@ import { compilePlan } from '@/lib/sim/compile'
 import { simulate } from '@/lib/sim/simulate'
 import { deterministicPath } from '@/lib/sim/paths/deterministic'
 import { runSucceeded } from '@/lib/sim/risk'
+import { resolveYear } from '@/lib/plan/time'
 
 // FI is judged against what the household needs to spend (the budget, or the
 // simple-mode income target), not against a fixed withdrawal rate, which
 // always "succeeds" no matter how small the portfolio.
-function succeeds(plan: PlanV2, startYear: number): boolean {
-  const c = compilePlan({ ...plan, drawdown: { ...plan.drawdown, strategy: { kind: 'expenses' } } }, { startYear })
+// `simpleTarget` holds the simple-mode income goal steady: it comes from the
+// final salary, and retiring in the very first years would otherwise leave no
+// salary to measure and an imaginary goal of zero.
+function succeeds(plan: PlanV2, startYear: number, simpleTarget?: number): boolean {
+  const compiled = compilePlan({ ...plan, drawdown: { ...plan.drawdown, strategy: { kind: 'expenses' } } }, { startYear })
+  const c = simpleTarget === undefined ? compiled : { ...compiled, simpleSpendingTarget: simpleTarget }
   return runSucceeded(simulate(c, deterministicPath(c.years, c.expectedReturnPct, c.inflationPct)))
 }
 
-// Smallest k in [lo, hi] for which test(k) holds, assuming it stays true once true.
+// Smallest k in [lo, hi] for which test(k) holds. A linear scan, because dated
+// events (windfalls, sales, benefit starts) can make success non-monotonic.
 function firstTrue(lo: number, hi: number, test: (k: number) => boolean): number | null {
-  if (!test(hi)) return null
-  while (lo < hi) {
-    const mid = Math.floor((lo + hi) / 2)
-    if (test(mid)) hi = mid
-    else lo = mid + 1
-  }
-  return lo
+  for (let k = lo; k <= hi; k++) if (test(k)) return k
+  return null
 }
 
 export function withRetirementIn(plan: PlanV2, year: number): PlanV2 {
@@ -30,12 +31,21 @@ export function withRetirementIn(plan: PlanV2, year: number): PlanV2 {
   }
 }
 
-export function withContributionsStoppingIn(plan: PlanV2, year: number): PlanV2 {
+// Stops contributions at `year` at the latest: one already due to end sooner
+// keeps its own end date.
+export function withContributionsStoppingIn(plan: PlanV2, year: number, startYear = year): PlanV2 {
+  const retirementYear = (ownerId: string) => {
+    const owner = plan.people.find(p => p.id === ownerId)
+    return owner ? owner.birthYear + owner.retirementAge : year
+  }
   return {
     ...plan,
     accounts: plan.accounts.map(a => ({
       ...a,
-      contributions: a.contributions.map(rule => ({ ...rule, to: { kind: 'year' as const, year } })),
+      contributions: a.contributions.map(rule => {
+        const existing = resolveYear(rule.to, plan.people, startYear, retirementYear(a.ownerId))
+        return { ...rule, to: { kind: 'year' as const, year: Math.min(existing, year) } }
+      }),
     })),
   }
 }
@@ -57,8 +67,9 @@ export function fiMetrics(plan: PlanV2, startYear: number): FiMetrics {
   const horizon = Math.max(0, lastRetirement - startYear)
   const onTrack = succeeds(plan, startYear)
   if (!onTrack) return { onTrack, fiYear: null, coastYear: null }
-  const fiOffset = firstTrue(0, horizon, k => succeeds(withRetirementIn(plan, startYear + k), startYear))
-  const coastOffset = firstTrue(0, horizon, k => succeeds(withContributionsStoppingIn(plan, startYear + k), startYear))
+  const target = compilePlan(plan, { startYear }).simpleSpendingTarget
+  const fiOffset = firstTrue(0, horizon, k => succeeds(withRetirementIn(plan, startYear + k), startYear, target))
+  const coastOffset = firstTrue(0, horizon, k => succeeds(withContributionsStoppingIn(plan, startYear + k, startYear), startYear, target))
   return {
     onTrack,
     fiYear: fiOffset === null ? null : startYear + fiOffset,

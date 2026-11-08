@@ -1,3 +1,4 @@
+import { giftsAfterRetirement } from '@/lib/calculations'
 import { usePeople } from '@/contexts/PeopleContext'
 import { usePlanStore } from '@/contexts/PlanStoreContext'
 import { useAssumptions } from '@/contexts/AssumptionsContext'
@@ -27,7 +28,7 @@ export function usePlanNarrative() {
     currentAnnualContributions: projection.totalAnnualContributions,
     currentPortfolio: projection.totalPortfolio,
     showRealValues: assumptions.showRealValues,
-    plannedGifts: assumptions.plannedGifts,
+    plannedGifts: giftsAfterRetirement(assumptions.plannedGifts, projection.householdRetirementAge),
     effectiveTaxRate: projection.retirementTax?.effectiveRrspTaxRate ?? 0,
   })
 

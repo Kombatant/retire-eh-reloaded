@@ -1,4 +1,5 @@
 import { OAS_MAX_ANNUAL_2026 } from '@/lib/tax'
+import type { ProvinceCode } from '@/lib/plan/schema'
 import type { ProjectionDataPoint } from '@/types/household'
 
 export function getPortfolioAtRetirement(data: ProjectionDataPoint[]): number {
@@ -8,6 +9,12 @@ export function getPortfolioAtRetirement(data: ProjectionDataPoint[]): number {
 export interface PlannedGiftLite {
   amount: number
   age: number
+}
+
+// Gifts dated before the household retires have already left the savings by
+// then, so only later ones are reserved out of the retirement portfolio.
+export function giftsAfterRetirement<T extends PlannedGiftLite>(gifts: T[], retirementAge: number): T[] {
+  return gifts.filter(g => g.age >= retirementAge)
 }
 
 // Total value of planned one-time gifts, expressed in the same dollar basis as the
@@ -39,15 +46,22 @@ export function getPortfolioAfterGifts(
 export const CPP_BASELINE_AGE = 65
 export const CPP_MIN_START_AGE = 60
 export const CPP_MAX_START_AGE = 70
+export const QPP_MAX_START_AGE = 72
 
-export function clampCppStartAge(startAge: number): number {
-  return Math.min(CPP_MAX_START_AGE, Math.max(CPP_MIN_START_AGE, Math.round(startAge)))
+// The QPP can be deferred to 72; the CPP stops growing at 70.
+export function maxPensionStartAge(province: ProvinceCode | undefined): number {
+  return province === 'QC' ? QPP_MAX_START_AGE : CPP_MAX_START_AGE
 }
 
-// Standard CPP adjustments: -0.6% per month before 65, +0.7% per month after 65.
-// The entered CPP amount is treated as the age-65 baseline.
-export function cppAdjustmentFactor(startAge: number): number {
-  const age = clampCppStartAge(startAge)
+export function clampCppStartAge(startAge: number, maxStartAge = CPP_MAX_START_AGE): number {
+  return Math.min(maxStartAge, Math.max(CPP_MIN_START_AGE, Math.round(startAge)))
+}
+
+// Standard adjustments: -0.6% per month before 65, +0.7% per month after 65.
+// The QPP's early reduction is 0.5-0.6% depending on the pension, so 0.6% is
+// the conservative value. The entered amount is the age-65 baseline.
+export function cppAdjustmentFactor(startAge: number, maxStartAge = CPP_MAX_START_AGE): number {
+  const age = clampCppStartAge(startAge, maxStartAge)
   if (age < CPP_BASELINE_AGE) {
     return 1 - 0.006 * 12 * (CPP_BASELINE_AGE - age)
   }
@@ -62,10 +76,11 @@ export function getCppIncomeAtAge(
   annualCppAt65: number | undefined,
   startAge: number | undefined,
   age: number,
+  maxStartAge = CPP_MAX_START_AGE,
 ): number {
-  const resolvedStartAge = clampCppStartAge(startAge ?? CPP_BASELINE_AGE)
+  const resolvedStartAge = clampCppStartAge(startAge ?? CPP_BASELINE_AGE, maxStartAge)
   if (age < resolvedStartAge) return 0
-  return (annualCppAt65 || 0) * cppAdjustmentFactor(resolvedStartAge)
+  return (annualCppAt65 || 0) * cppAdjustmentFactor(resolvedStartAge, maxStartAge)
 }
 
 export const OAS_BASELINE_AGE = 65

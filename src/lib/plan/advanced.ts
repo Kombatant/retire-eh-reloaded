@@ -33,6 +33,7 @@ export function advancedSettingsInUse(plan: PlanV2): AdvancedSetting[] {
     if (account.type === 'STOCK') continue
     if (account.returnOverridePct !== undefined) add('savings', `Custom return on ${name}`)
     if (account.contributions.some(c => c.indexed)) add('savings', `Inflation-indexed contributions to ${name}`)
+    if (account.type === 'RRSP' && account.rrifConversionAge !== undefined) add('savings', `RRIF conversion age on ${name}`)
     if (account.type === 'NONREG') {
       const y = account.yields
       if (y && (y.interestPct > 0 || y.eligibleDividendPct > 0 || y.foreignDividendPct > 0)) add('savings', `Yearly distributions on ${name}`)
@@ -57,7 +58,6 @@ export function advancedSettingsInUse(plan: PlanV2): AdvancedSetting[] {
   const d = plan.drawdown
   if (!ESSENTIAL_STRATEGIES.has(d.strategy.kind)) add('withdrawals', 'Flexible withdrawal strategy')
   if (d.order === 'custom') add('withdrawals', 'Custom withdrawal order')
-  if (d.rrifConversionAge !== 71) add('withdrawals', 'Early RRIF conversion')
   if (d.meltdown.enabled) add('withdrawals', 'RRSP meltdown')
   if (multi && d.rrifUseYoungerSpouseAge) add('withdrawals', "RRIF minimums on the younger spouse's age")
   if (!plan.estate.probate) add('withdrawals', 'Probate fees left out')

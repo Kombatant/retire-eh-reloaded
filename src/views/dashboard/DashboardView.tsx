@@ -8,8 +8,9 @@ import { useAssumptions } from '@/contexts/AssumptionsContext'
 import { usePlanOutlook } from '@/hooks/usePlanOutlook'
 import { usePlanNarrative } from '@/hooks/usePlanNarrative'
 import { useRiskAnalysis } from '@/hooks/useRiskAnalysis'
-import { getPortfolioAfterGifts } from '@/lib/calculations'
+import { getPortfolioAfterGifts, giftsAfterRetirement } from '@/lib/calculations'
 import { retirementIncomeSources, type IncomeSourceKey } from '@/lib/insights/outlook'
+import { successIsMeaningful } from '@/lib/sim/risk'
 import { buildMilestones, type Milestone } from '@/lib/insights/milestones'
 import { fiMetrics } from '@/lib/insights/fi'
 import { money, moneyCompact } from '@/lib/formatting'
@@ -78,6 +79,8 @@ function StatusHero() {
   const { navigate } = useRoute()
   const o = usePlanOutlook()
   const risk = useRiskAnalysis()
+  const { compiledPlan, simulation } = useProjectionContext()
+  const testable = successIsMeaningful(compiledPlan, simulation)
   const success = risk.monteCarlo ? Math.round(risk.monteCarlo.successRate * 100) : null
   const progress = Math.max(0, Math.min(100, o.outlook.progressPct))
   const target = o.goal.requiredAnnualIncome
@@ -110,7 +113,9 @@ function StatusHero() {
         <div className="flex shrink-0 flex-col gap-3 md:items-end md:text-right">
           <button type="button" onClick={() => navigate({ view: 'risk' })} className="group text-left md:text-right">
             <div className="text-[13px] font-medium text-fg-muted">Chance of success</div>
-            {success === null ? (
+            {!testable ? (
+              <div className="mt-1 text-sm text-fg-muted">No withdrawals to test</div>
+            ) : success === null ? (
               <div className="mt-1 text-sm text-fg-muted" role="status">Calculating…</div>
             ) : (
               <>
@@ -198,27 +203,34 @@ const SOURCE_META: Record<IncomeSourceKey, { label: string; color: string; help:
   withdrawals: { label: 'From savings', color: chartColors.withdrawals, help: 'Sustainable withdrawal' },
   cpp: { label: 'CPP / QPP', color: chartColors.cpp, help: 'From your chosen start age' },
   oas: { label: 'OAS', color: chartColors.oas, help: 'From your chosen start age' },
+  gis: { label: 'GIS', color: chartColors.gis, help: 'Income-tested top-up to OAS' },
   pension: { label: 'Workplace pension', color: chartColors.pension, help: 'Defined benefit' },
 }
 
 function IncomeSourcesCard() {
+  const { activePlan } = usePlanStore()
   const projection = useProjectionContext()
   const assumptions = useAssumptions()
   const o = usePlanOutlook()
   const portfolioAfterGifts = getPortfolioAfterGifts(
-    o.portfolioAtRetirement, assumptions.plannedGifts, projection.yearsToRetirement, assumptions.showRealValues, assumptions.inflationRate,
+    o.portfolioAtRetirement, giftsAfterRetirement(assumptions.plannedGifts, projection.householdRetirementAge), projection.yearsToRetirement, assumptions.showRealValues, assumptions.inflationRate,
   )
   const sources = retirementIncomeSources({
     portfolioAfterGifts,
     withdrawalRatePct: assumptions.withdrawalRate,
     annualCpp: projection.totalAnnualCpp,
     annualOas: projection.totalAnnualOas,
+    annualGis: projection.totalAnnualGis,
     annualPension: projection.totalAnnualPension,
     showRealValues: assumptions.showRealValues,
     inflationRatePct: assumptions.inflationRate,
     yearsToRetirement: projection.yearsToRetirement,
   })
   const total = sources.reduce((s, x) => s + x.amount, 0)
+  const strategy = activePlan.drawdown.strategy.kind
+  const withdrawalNote = strategy === 'expenses' || strategy === 'vpw'
+    ? `${assumptions.withdrawalRate}% of savings, as a guideline. Your strategy sets the actual amount.`
+    : `${assumptions.withdrawalRate}% of savings`
 
   return (
     <Card>
@@ -234,7 +246,7 @@ function IncomeSourcesCard() {
             <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: SOURCE_META[s.key].color }} aria-hidden />
             <div className="min-w-0 flex-1">
               <div className="text-sm text-fg">{SOURCE_META[s.key].label}</div>
-              <div className="text-xs text-fg-muted">{s.key === 'withdrawals' ? `${assumptions.withdrawalRate}% of savings` : SOURCE_META[s.key].help}</div>
+              <div className="text-xs text-fg-muted">{s.key === 'withdrawals' ? withdrawalNote : SOURCE_META[s.key].help}</div>
             </div>
             <div className="text-right">
               <div className="text-sm font-medium text-fg">{money(s.amount)}</div>
