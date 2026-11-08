@@ -358,6 +358,7 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
       investmentIncome: 0,
       realizedGains: 0,
       deposits: 0,
+      propertySaleCredit: 0,
       spending: 0,
       debtPayments: 0,
       surplus: 0,
@@ -592,12 +593,15 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
       const debts = c.debts.flatMap((d, j) => (d.propertyIndex === p && debtBalance[j] > 0 ? [{ index: j, amount: debtBalance[j] }] : []))
       const owed = sum(debts.map(d => d.amount))
       debts.forEach(d => { debtBalance[d.index] = 0 })
-      if (!prop.principalResidence) creditOwner(realized, propertyOwner[p], Math.max(0, gross - costs - propertyAcb[p]))
+      const gain = prop.principalResidence ? 0 : Math.max(0, gross - costs - propertyAcb[p])
+      creditOwner(realized, propertyOwner[p], gain)
       const replacement = prop.replacementValue * k
       const proceeds = gross - costs
       const toDebt = Math.min(proceeds, owed)
       const toHome = Math.min(proceeds - toDebt, replacement)
-      deposit(prop.proceedsAccount, proceeds - toDebt - toHome)
+      const invested = proceeds - toDebt - toHome
+      deposit(prop.proceedsAccount, invested)
+      if (prop.proceedsAccount >= 0) row.propertySaleCredit += Math.max(0, invested - gain)
       if (owed > toDebt || replacement > toHome) {
         salesToFund.push({ property: p, replacement, debts, debtGap: owed - toDebt, homeGap: replacement - toHome })
       }

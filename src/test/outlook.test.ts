@@ -1,14 +1,14 @@
 import { describe, it, expect } from 'vitest'
-import { retirementOutlook, moneyLasts, retirementIncomeSources, retirementSpendingTarget } from '@/lib/insights/outlook'
+import { planGoalOutlook, retirementOutlook, moneyLasts, retirementIncomeSources, retirementSpendingTarget } from '@/lib/insights/outlook'
 import { calculateRetirementGoal, calculateRetirementGoalWithIncome } from '@/lib/calculations'
-import type { PlanV2 } from '@/lib/plan/schema'
+import { planSchema, type PlanV2, type Property } from '@/lib/plan/schema'
 import { createDefaultPlan } from '@/lib/plan/defaults'
-import { simulatePlan } from '@/lib/sim'
+import { compilePlan, deterministicPath, simulate, simulatePlan } from '@/lib/sim'
 import type { RetirementGoalResult } from '@/lib/calculations'
 
 function goal(overrides: Partial<RetirementGoalResult & { projectedAnnualIncome: number; afterTaxProjectedAnnualIncome: number }> = {}) {
   return {
-    portfolioAtRetirement: 1_000_000, requiredAnnualIncome: 70_000, requiredAnnualIncomeAfterPension: 40_000,
+    portfolioAtRetirement: 1_000_000, propertySaleValue: 0, requiredAnnualIncome: 70_000, requiredAnnualIncomeAfterPension: 40_000,
     requiredPortfolio: 1_000_000, levelizedGuaranteedIncome: 30_000, giftTotal: 0, portfolioAfterGifts: 1_000_000,
     progress: 110, gap: 0, additionalAnnualSavings: 0,
     afterTaxPortfolioAtRetirement: 900_000, afterTaxPortfolioAfterGifts: 900_000,
@@ -167,6 +167,83 @@ describe('retirementSpendingTarget', () => {
     expect(goalResult.requiredPortfolio).toBe(0)
     expect(goalResult.progress).toBe(100)
     expect(goalResult.afterTaxProgress).toBe(100)
+  })
+})
+
+describe('a planned property sale', () => {
+  const YEAR = 2026
+  const planWith = (property: object, spend = 55_000): PlanV2 => planSchema.parse({
+    schemaVersion: 2, id: 'p', asOf: '2026-01-01',
+    people: [{ id: 'a', name: 'A', birthYear: YEAR - 55, retirementAge: 65, province: 'ON', cppStartAge: 65 }],
+    accounts: [{ id: 'r', ownerId: 'a', type: 'RRSP', balance: 300_000 }, { id: 't', ownerId: 'a', type: 'TFSA', balance: 50_000 }],
+    incomes: [{ id: 'i', ownerId: 'a', label: 'Salary', kind: 'employment', amount: 90_000, frequency: 'annual', to: { kind: 'retirement', personId: 'a', offset: 0 } }],
+    expenses: { mode: 'detailed', items: [{ id: 'e', label: 'Living', amount: spend, frequency: 'annual' }] },
+    drawdown: { strategy: { kind: 'expenses' } },
+    properties: [{ id: 'h', ownerId: 'a', label: 'Home', value: 800_000, annualCosts: 0, ...property }],
+  })
+  const saleAt = (age: number, replacementValue = 0): NonNullable<Property['sale']> => ({
+    at: { kind: 'age', personId: 'a', age }, sellingCostPct: 5, replacementValue,
+  })
+  const outlookOf = (plan: PlanV2) => {
+    const c = compilePlan(plan, { startYear: YEAR })
+    const result = simulate(c, deterministicPath(c.years, c.expectedReturnPct, c.inflationPct))
+    return planGoalOutlook(plan, c, result, YEAR)
+  }
+
+  it('discounts money that arrives after retirement and does not tax it as RRSP', () => {
+    const base = {
+      annualSpendingTarget: 60_000, annualPension: 0, withdrawalRate: 4, yearsToRetirement: 0, expectedReturn: 7,
+      inflationRate: 2, currentAnnualContributions: 0, currentPortfolio: 0, effectiveTaxRate: 25,
+      currentProjectionData: [{ Total: 500_000, RRSP: 500_000 } as never],
+    }
+    const without = calculateRetirementGoalWithIncome(base)
+    const withSale = calculateRetirementGoalWithIncome({ ...base, propertySaleSchedule: [0, 0, 108_160] })
+    expect(withSale.propertySaleValue).toBeCloseTo(100_000, 6)
+    expect(withSale.portfolioAtRetirement).toBe(500_000)
+    expect(withSale.gap).toBeCloseTo(without.gap - 100_000, 6)
+    expect(withSale.afterTaxPortfolioAtRetirement).toBeCloseTo(without.afterTaxPortfolioAtRetirement + 100_000, 6)
+    expect(withSale.projectedAnnualIncome).toBeCloseTo(without.projectedAnnualIncome + 4_000, 6)
+  })
+
+  it('raises goal progress when the home is sold in retirement', () => {
+    const keep = outlookOf(planWith({}))
+    const sell = outlookOf(planWith({ sale: saleAt(75) }))
+    expect(keep.outlook.propertySaleValue).toBe(0)
+    expect(sell.outlook.propertySaleValue).toBeGreaterThan(400_000)
+    expect(sell.outlook.progressPct).toBeGreaterThan(keep.outlook.progressPct + 20)
+  })
+
+  it('counts only what is left after buying the next home', () => {
+    const sell = outlookOf(planWith({ sale: saleAt(75) }))
+    const downsize = outlookOf(planWith({ sale: saleAt(75, 400_000) }))
+    expect(downsize.outlook.propertySaleValue).toBeLessThan(sell.outlook.propertySaleValue)
+    expect(downsize.outlook.propertySaleValue).toBeGreaterThan(0)
+  })
+
+  it('treats a sale at retirement like one just before it, without counting it twice', () => {
+    const before = outlookOf(planWith({ sale: saleAt(64) }))
+    const at = outlookOf(planWith({ sale: saleAt(65) }))
+    expect(before.outlook.propertySaleValue).toBe(0)
+    expect(at.outlook.propertySaleValue).toBeGreaterThan(0)
+    expect(at.goal.portfolioAtRetirement).toBeLessThan(before.goal.portfolioAtRetirement)
+    expect(Math.abs(at.outlook.progressPct - before.outlook.progressPct)).toBeLessThan(before.outlook.progressPct * 0.1)
+  })
+
+  it('leaves the gain on a rental out of the goal', () => {
+    const home = outlookOf(planWith({ isPrincipalResidence: true, sale: saleAt(75) }))
+    const rental = outlookOf(planWith({ isPrincipalResidence: false, acb: 300_000, sale: saleAt(75) }))
+    expect(rental.outlook.propertySaleValue).toBeLessThan(home.outlook.propertySaleValue)
+    expect(rental.outlook.propertySaleValue).toBeGreaterThan(0)
+  })
+
+  it('is not on track when the money runs out before the sale', () => {
+    const plan = planWith({ value: 6_000_000, sale: saleAt(85) }, 80_000)
+    const yearsBeforeSale = simulatePlan(plan, { startYear: YEAR }).result.rows.slice(0, 85 - 55)
+    expect(yearsBeforeSale.some(r => r.shortfall > 0)).toBe(true)
+    const late = outlookOf(plan)
+    expect(late.outlook.progressPct).toBeGreaterThanOrEqual(100)
+    expect(late.outlook.onTrack).toBe(false)
+    expect(late.outlook.metOnPaperOnly).toBe(true)
   })
 })
 

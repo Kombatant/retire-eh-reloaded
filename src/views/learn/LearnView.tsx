@@ -300,7 +300,8 @@ const sections: LearnSection[] = [
       <div className="space-y-3 text-sm text-fg-secondary">
         <p>
           <strong className="text-fg">From savings:</strong> a sustainable withdrawal from your accounts. The Dashboard uses your
-          withdrawal rate (4% by default), a common rule of thumb for income that lasts.
+          withdrawal rate (4% by default), a common rule of thumb for income that lasts. A property you plan to sell in retirement counts
+          too: what the sale leaves after costs, the mortgage and any next home, reduced for the years you wait for it.
         </p>
         <p>
           <strong className="text-fg">CPP / QPP:</strong> the Canada (or Quebec) Pension Plan, based on your working years and earnings.

@@ -29,6 +29,8 @@ export interface RetirementOutlook {
   noSavingsNeeded: boolean
   // The goal is met by the savings rule, but the simulation itself runs short.
   metOnPaperOnly: boolean
+  // How much of the progress comes from selling property later, valued at retirement.
+  propertySaleValue: number
 }
 
 export function retirementOutlook(
@@ -61,6 +63,7 @@ export function retirementOutlook(
     annualRoom: onTrack ? Math.max(0, comparableIncome - goal.requiredAnnualIncome) : null,
     noSavingsNeeded: goal.requiredPortfolio <= 0 && goal.requiredAnnualIncome > 0,
     metOnPaperOnly: progressPct >= 100 && opts.planFunded === false,
+    propertySaleValue: goal.propertySaleValue,
     preTaxIncome: goal.projectedAnnualIncome,
     afterTaxIncome,
     estimatedTax: tax ? Math.max(0, goal.projectedAnnualIncome - afterTaxIncome) : null,
@@ -87,6 +90,7 @@ export function planGoalOutlook(
     annualSpendingTarget: retirementSpendingTarget(c, result),
     annualPension: row ? row.people.reduce((s, p) => s + p.pension + p.cpp + p.oas, 0) / row.cpi : 0,
     guaranteedIncomeSchedule: result.rows.slice(D).map(r => r.guaranteedIncome / r.cpi),
+    propertySaleSchedule: result.rows.slice(D).map(r => r.propertySaleCredit / r.cpi),
     withdrawalRate: assumptions.withdrawalRate,
     yearsToRetirement: D,
     expectedReturn: assumptions.expectedReturn,

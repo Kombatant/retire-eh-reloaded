@@ -41,6 +41,7 @@ interface ProjectionContextValueTyped {
   totalAnnualOas: number
   totalAnnualGis: number
   guaranteedIncomeSchedule: number[]
+  propertySaleSchedule: number[]
   totalPortfolio: number
   totalAnnualContributions: number
   retirementTax: RetirementTaxSnapshot | null
@@ -87,6 +88,10 @@ export function ProjectionProvider({ children }: { children: ReactNode }) {
     () => simulation.rows.slice(compiledPlan.drawdownStartOffset).map(row => row.guaranteedIncome / row.cpi),
     [simulation.rows, compiledPlan.drawdownStartOffset]
   )
+  const propertySaleSchedule = useMemo(
+    () => simulation.rows.slice(compiledPlan.drawdownStartOffset).map(row => row.propertySaleCredit / row.cpi),
+    [simulation.rows, compiledPlan.drawdownStartOffset]
+  )
 
   const projectionData = useMemo(
     () => toProjectionData(compiledPlan, simulation, showRealValues),
@@ -121,7 +126,7 @@ export function ProjectionProvider({ children }: { children: ReactNode }) {
       realProjectionData, currentProjectionData: projectionData,
       householdRetirementAge, yearsToRetirement, minCurrentAge,
       totalAnnualIncome, retirementSpendingTarget, totalAnnualPension, totalAnnualCpp, totalAnnualOas, totalAnnualGis,
-      guaranteedIncomeSchedule, totalPortfolio, totalAnnualContributions, retirementTax,
+      guaranteedIncomeSchedule, propertySaleSchedule, totalPortfolio, totalAnnualContributions, retirementTax,
     }}>
       {children}
     </ProjectionContext.Provider>

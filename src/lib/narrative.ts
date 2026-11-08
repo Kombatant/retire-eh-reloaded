@@ -21,6 +21,7 @@ export interface PlanNarrativeInput {
   showRealValues: boolean
   giftTotal: number
   portfolioAtRetirement: number
+  propertySaleValue?: number
   requiredPortfolio: number
   requiredAnnualIncome: number
   projectedAnnualIncome: number
@@ -72,6 +73,7 @@ export function buildPlanNarrative(input: PlanNarrativeInput): PlanNarrative {
     showRealValues,
     giftTotal,
     portfolioAtRetirement,
+    propertySaleValue = 0,
     requiredPortfolio,
     requiredAnnualIncome,
     projectedAnnualIncome,
@@ -129,6 +131,9 @@ export function buildPlanNarrative(input: PlanNarrativeInput): PlanNarrative {
   const comparison = gap <= 0
     ? `That's about ${money(Math.abs(gap))} above your ${money(requiredPortfolio)} target.`
     : `That's about ${money(gap)} short of your ${money(requiredPortfolio)} target.`
+  const saleSentence = propertySaleValue > 0
+    ? ` A planned property sale after retirement adds the equivalent of about ${money(propertySaleValue)}.`
+    : ''
   const giftSentence = giftTotal > 0
     ? ` Your target includes a ${money(giftTotal)} reserve for planned gifts.`
     : ''
@@ -160,7 +165,7 @@ export function buildPlanNarrative(input: PlanNarrativeInput): PlanNarrative {
     headline,
     paragraphs: [
       `${subject} ${savingClause} ${retirementClause}. ${growthClause}`,
-      `By age ${householdRetirementAge}, the household portfolio is projected to reach about ${money(portfolioAtRetirement)} ${basis}. ${comparison}${giftSentence}`,
+      `By age ${householdRetirementAge}, the household portfolio is projected to reach about ${money(portfolioAtRetirement)} ${basis}.${saleSentence} ${comparison}${giftSentence}`,
       `That supports about ${money(projectedAnnualIncome)} a year before tax and ${money(afterTaxAnnualIncome)} after tax, against ${goalClause}.${guaranteedSentence}${taxSentence}${leverSentence}`,
     ],
   }

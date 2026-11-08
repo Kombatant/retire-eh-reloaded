@@ -33,6 +33,11 @@ export function GoalProgress({ outlook, barClassName, onTestRoom }: {
           style={{ width: `${barWidth}%` }}
         />
       </div>
+      {outlook.propertySaleValue > 0 && (
+        <p className="mt-2 text-xs text-fg-secondary">
+          Counts about <span className="font-medium text-fg">{money(outlook.propertySaleValue)}</span> from a planned property sale, valued at retirement.
+        </p>
+      )}
       {outlook.metOnPaperOnly ? (
         <p className="mt-2 text-xs text-fg-secondary">
           Your savings reach the goal on paper, but the year-by-year simulation runs short, so there's no room to add spending.

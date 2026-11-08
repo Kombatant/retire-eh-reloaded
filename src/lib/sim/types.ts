@@ -281,6 +281,9 @@ export interface YearRow {
   realizedGains: number
   // One-time income and property sale proceeds deposited into accounts.
   deposits: number
+  // What a property sale this year adds towards the retirement goal: the cash
+  // invested, less any capital gain, whose tax depends on that year's income.
+  propertySaleCredit: number
   // Spending need: simple mode = pre-tax income target in drawdown;
   // detailed mode = after-tax spending (items, property costs, debt payments).
   spending: number

@@ -25,6 +25,7 @@ The application is 100% pure TypeScript (React + Vite). All calculations run cli
   - `compilePlan(plan, { startYear })` resolves a v2 plan once.
   - `simulate(compiled, marketPath)` runs a year-by-year household simulation in nominal dollars.
   - One-time costs paid from savings (gifts, debt left after a sale, a replacement home) go through `fundOneOff`, so they are withdrawn, taxed and reported like any other withdrawal.
+  - A property sold from retirement onwards isn't in savings at retirement, so `YearRow.propertySaleCredit` carries it into the goal, discounted at the withdrawal rate (`valueAtRetirement`). The verdict still needs the simulation to stay funded.
   - `YearRow.shortfall` decides whether a year counts as funded: unfunded budget for `expenses`/`initialPct`, unfunded essentials for strategies that flex spending, and the missed withdrawal in simple mode. `budgetShortfall`, `essentialShortfall` and `withdrawalShortfall` report each part.
   - `legacyAdapter.ts` turns the output into the series the existing charts use.
   - Deterministic projections, scenario bands and (later) Monte Carlo and backtests all reuse `simulate`.
@@ -36,6 +37,7 @@ The application is 100% pure TypeScript (React + Vite). All calculations run cli
 - **Proposals** (`src/lib/insights/proposals.ts`): each candidate is a serializable `Change`, applied with `applyChanges` and scored by re-running `simulate` and Monte Carlo on the same seeds as the baseline. A change is shown only if it beats the plan by a meaningful margin (`isImprovement`).
   - The page runs `runProposalJob` in its own Web Worker (`src/workers/proposals.worker.ts`) through `useProposals`.
   - Add a new lever by adding a `Change` kind, its `applyChange` and `describeChange` cases, and a candidate list.
+  - When a plan misses the goal or the success target, the trade-offs include downsizing or selling the principal residence, from the latest age to the earliest (`homeSaleLevers`). Selling outright adds an estimated rent to the budget, so it is only offered in detailed mode.
   - The goal comes from `planGoalOutlook` (`src/lib/insights/outlook.ts`), which the Dashboard also uses through `usePlanOutlook`, so both give the same verdict.
   - Retirement timing (`src/lib/insights/retirementTiming.ts`) scores a range of retirement ages the same way, in its own worker through `useRetirementTiming`. All ages are scored up front so the slider needs no recalculation. "Safe" means the success target and the goal are both met, at that age and the later ones.
 - **Original engine** (`src/lib/legacy/`): kept only as the reference for `src/test/sim-parity.test.ts`.

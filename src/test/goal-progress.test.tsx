@@ -5,11 +5,18 @@ import type { RetirementOutlook } from '@/lib/insights/outlook'
 
 const outlook = (overrides: Partial<RetirementOutlook> = {}): RetirementOutlook => ({
   onTrack: true, progressPct: 120, progressBasis: 'preTax', preTaxIncome: 64_000, afterTaxIncome: 55_000,
-  estimatedTax: 9_000, extraSavingsNeeded: 0, annualRoom: 4_000, noSavingsNeeded: false, metOnPaperOnly: false,
+  estimatedTax: 9_000, extraSavingsNeeded: 0, annualRoom: 4_000, noSavingsNeeded: false, metOnPaperOnly: false, propertySaleValue: 0,
   ...overrides,
 })
 
 describe('GoalProgress', () => {
+  it('says when progress relies on selling property later', () => {
+    const { rerender } = render(<GoalProgress outlook={outlook()} barClassName="h-2" />)
+    expect(screen.queryByText(/planned property sale/)).toBeNull()
+    rerender(<GoalProgress outlook={outlook({ propertySaleValue: 250_000 })} barClassName="h-2" />)
+    expect(screen.getByText(/planned property sale/).textContent).toContain('$250,000')
+  })
+
   it('shows the percentage past 100 with a full bar and the room in dollars', () => {
     render(<GoalProgress outlook={outlook()} barClassName="h-2" />)
     expect(screen.getByText('120%')).toBeInTheDocument()

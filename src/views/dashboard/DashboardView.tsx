@@ -8,7 +8,6 @@ import { useAssumptions } from '@/contexts/AssumptionsContext'
 import { usePlanOutlook } from '@/hooks/usePlanOutlook'
 import { usePlanNarrative } from '@/hooks/usePlanNarrative'
 import { useRiskAnalysis } from '@/hooks/useRiskAnalysis'
-import { getPortfolioAfterGifts, giftsAfterRetirement } from '@/lib/calculations'
 import { retirementIncomeSources, type IncomeSourceKey } from '@/lib/insights/outlook'
 import { successIsMeaningful } from '@/lib/sim/risk'
 import { buildMilestones, type Milestone } from '@/lib/insights/milestones'
@@ -209,11 +208,9 @@ function IncomeSourcesCard() {
   const projection = useProjectionContext()
   const assumptions = useAssumptions()
   const o = usePlanOutlook()
-  const portfolioAfterGifts = getPortfolioAfterGifts(
-    o.portfolioAtRetirement, giftsAfterRetirement(assumptions.plannedGifts, projection.householdRetirementAge), projection.yearsToRetirement, assumptions.showRealValues, assumptions.inflationRate,
-  )
   const sources = retirementIncomeSources({
-    portfolioAfterGifts,
+    // The goal's figure, so a later property sale counts here too.
+    portfolioAfterGifts: o.goal.portfolioAfterGifts,
     withdrawalRatePct: assumptions.withdrawalRate,
     annualCpp: projection.totalAnnualCpp,
     annualOas: projection.totalAnnualOas,
@@ -225,9 +222,10 @@ function IncomeSourcesCard() {
   })
   const total = sources.reduce((s, x) => s + x.amount, 0)
   const strategy = activePlan.drawdown.strategy.kind
-  const withdrawalNote = strategy === 'expenses' || strategy === 'vpw'
+  const baseNote = strategy === 'expenses' || strategy === 'vpw'
     ? `${assumptions.withdrawalRate}% of savings, as a guideline. Your strategy sets the actual amount.`
     : `${assumptions.withdrawalRate}% of savings`
+  const withdrawalNote = o.goal.propertySaleValue > 0 ? `${baseNote} Includes a planned property sale.` : baseNote
 
   return (
     <Card>

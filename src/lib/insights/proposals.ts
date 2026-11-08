@@ -34,6 +34,8 @@ export type Change =
   // Percent change in recurring spending; negative is less.
   | { kind: 'spending'; pct: number }
   | { kind: 'saving'; annual: number; accountId: string; accountLabel: string }
+  // nextHomeValue 0 means selling and renting; annualRent is then added to the budget.
+  | { kind: 'sellHome'; propertyId: string; homeLabel: string; personId: string; personName: string; age: number; nextHomeValue: number; annualRent: number }
 
 export interface PlanScore {
   // Null when the plan has nothing for Monte Carlo to test.
@@ -136,6 +138,24 @@ function applyChange(plan: PlanV2, change: Change, nowYear: number): PlanV2 {
           a.id === change.accountId ? { ...a, contributions: [...a.contributions, { amount: change.annual, indexed: true }] } : a
         )),
       }
+    case 'sellHome': {
+      const at = { kind: 'age', personId: change.personId, age: change.age } as const
+      return {
+        ...plan,
+        properties: plan.properties.map(p => (
+          p.id === change.propertyId ? { ...p, sale: { at, sellingCostPct: HOME_SELLING_COST_PCT, replacementValue: change.nextHomeValue } } : p
+        )),
+        expenses: change.annualRent > 0
+          ? {
+              ...plan.expenses,
+              items: [...plan.expenses.items, {
+                id: `rent-${change.propertyId}`, label: 'Rent', category: 'general', amount: change.annualRent, frequency: 'annual',
+                from: at, essential: true, indexed: true, realGrowthPct: 0,
+              }],
+            }
+          : plan.expenses,
+      }
+    }
   }
 }
 
@@ -175,6 +195,16 @@ export function describeChange(change: Change): { title: string; detail: string 
         : { title: `Spend ${change.pct}% more`, detail: 'Raises recurring spending. One-time costs and gifts stay as they are.' }
     case 'saving':
       return { title: `Save ${money(change.annual)} more a year`, detail: `Added to ${change.accountLabel} until retirement, rising with inflation.` }
+    case 'sellHome':
+      return change.nextHomeValue > 0
+        ? {
+            title: `Downsize your home at ${change.age}`,
+            detail: `When ${change.personName} is ${change.age}, sell ${change.homeLabel}, buy a home worth ${money(change.nextHomeValue)} (today’s dollars) and invest what is left after costs and any mortgage.`,
+          }
+        : {
+            title: `Sell your home at ${change.age} and rent`,
+            detail: `When ${change.personName} is ${change.age}, sell ${change.homeLabel} and invest what is left after costs and any mortgage. Adds rent of about ${money(change.annualRent)} a year (today’s dollars) to your budget; that is an estimate, so check it against your area.`,
+          }
   }
 }
 
@@ -192,6 +222,12 @@ const RETIRE_LATER_YEARS = [1, 2, 3, 4, 5]
 const SPEND_LESS_PCT = [5, 10, 15, 20, 25]
 const SPEND_MORE_PCT = [5, 10, 15, 20, 30, 40, 50]
 const SAVE_MORE = [1_200, 2_400, 5_000, 7_500, 10_000, 15_000, 20_000]
+const HOME_SALE_AGES = [85, 80, 75, 70, 65]
+const HOME_SELLING_COST_PCT = 5
+const NEXT_HOME_SHARE = 0.5
+// Yearly rent as a share of what the home is worth. Toward the high end for
+// Canadian cities, so a sell-and-rent proposal doesn't look better than it is.
+const RENT_SHARE_OF_HOME_VALUE = 0.045
 
 function orderChanges(plan: PlanV2): Change[] {
   const owned = new Set(plan.accounts.map(a => a.type))
@@ -246,6 +282,28 @@ function savingTarget(plan: PlanV2) {
     if (account) return { id: account.id, label: account.label || type }
   }
   return null
+}
+
+// Downsizing and selling to rent, each from the latest age to the earliest, so
+// the trade-off search stops at the longest the household can stay put. Only a
+// principal residence: selling a rental would also end income the plan counts.
+function homeSaleLevers(plan: PlanV2, nowYear: number): Change[][] {
+  const home = plan.properties.find(p => p.isPrincipalResidence && !p.sale && p.value > 0)
+  if (!home) return []
+  const person = plan.people.find(p => p.id === home.ownerId) ?? plan.people[0]
+  const age = personAge(person.birthYear, nowYear)
+  const ages = [...new Set([...HOME_SALE_AGES, person.retirementAge])]
+    .filter(a => a >= person.retirementAge && a > age && a < person.lifeExpectancy)
+    .sort((a, b) => b - a)
+  const roundToThousand = (amount: number) => Math.round(amount / 1000) * 1000
+  const sale = { propertyId: home.id, homeLabel: home.label || 'your home', personId: person.id, personName: person.name }
+  return [
+    ages.map(a => ({ kind: 'sellHome', ...sale, age: a, nextHomeValue: roundToThousand(home.value * NEXT_HOME_SHARE), annualRent: 0 })),
+    // Simple mode has no budget to add rent to, and a sale without rent would flatter the plan.
+    plan.expenses.mode === 'detailed'
+      ? ages.map(a => ({ kind: 'sellHome', ...sale, age: a, nextHomeValue: 0, annualRent: roundToThousand(home.value * RENT_SHARE_OF_HOME_VALUE) }))
+      : [],
+  ]
 }
 
 // --- Comparing results --------------------------------------------------------
@@ -323,8 +381,9 @@ export async function runProposalJob(
   const free = [orderChanges(plan), meltdownChanges(plan), benefitChanges(plan, startYear), rrifChanges(plan, startYear)]
   const savings = savingTarget(plan)
   const canShiftRetirement = plan.people.some(p => personAge(p.birthYear, startYear) < p.retirementAge)
+  const homeLevers = focusOnSuccess ? homeSaleLevers(plan, startYear) : []
   // Enough for a progress bar; the trade-off searches usually stop early.
-  const expected = 1 + free.flat().length + 3 + 12
+  const expected = 1 + free.flat().length + 3 + 12 + homeLevers.flat().length
 
   const publish = (done: boolean) => onUpdate({
     base,
@@ -402,6 +461,7 @@ export async function runProposalJob(
       savings && canShiftRetirement
         ? SAVE_MORE.map(annual => ({ kind: 'saving', annual, accountId: savings.id, accountLabel: savings.label }))
         : [],
+      ...homeLevers,
     ]
     for (const lever of levers) {
       let last: { change: Change; score: PlanScore } | null = null

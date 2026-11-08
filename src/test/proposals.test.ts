@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { planSchema, type PlanV2, type PlanV2Input } from '@/lib/plan/schema'
-import { applyChanges, runProposalJob, type Change, type ProposalUpdate } from '@/lib/insights/proposals'
+import { applyChanges, createScorer, runProposalJob, type Change, type ProposalUpdate } from '@/lib/insights/proposals'
 import { compilePlan, deterministicPath, simulate } from '@/lib/sim'
 import { planGoalOutlook } from '@/lib/insights/outlook'
 
@@ -89,6 +89,34 @@ describe('applyChanges', () => {
   })
 })
 
+describe('selling the home', () => {
+  const home = { id: 'h', ownerId: 'a', label: 'Home', value: 800_000, annualCosts: 6_000 }
+  const sale = { kind: 'sellHome', propertyId: 'h', homeLabel: 'Home', personId: 'a', personName: 'A', age: 75 } as const
+  const apply = (p: PlanV2, ...changes: Change[]) => planSchema.parse(applyChanges(p, changes, YEAR))
+
+  it('downsizes without adding rent', () => {
+    const after = apply(plan(72_000, { properties: [home] }), { ...sale, nextHomeValue: 400_000, annualRent: 0 })
+    expect(after.properties[0].sale).toEqual({ at: { kind: 'age', personId: 'a', age: 75 }, sellingCostPct: 5, replacementValue: 400_000 })
+    expect(after.expenses.items).toHaveLength(2)
+  })
+
+  it('adds essential rent from the sale onward when selling outright', () => {
+    const after = apply(plan(72_000, { properties: [home] }), { ...sale, nextHomeValue: 0, annualRent: 36_000 })
+    expect(after.properties[0].sale!.replacementValue).toBe(0)
+    const rent = after.expenses.items.find(i => i.label === 'Rent')!
+    expect(rent).toMatchObject({ amount: 36_000, essential: true, from: { kind: 'age', personId: 'a', age: 75 } })
+    expect(rent.to).toBeUndefined()
+  })
+
+  it('charges the plan for the rent', () => {
+    const p = plan(72_000, { properties: [home] })
+    const { score } = createScorer(p, YEAR, 20)
+    const free = score(apply(p, { ...sale, nextHomeValue: 0, annualRent: 0 }))
+    const renting = score(apply(p, { ...sale, nextHomeValue: 0, annualRent: 36_000 }))
+    expect(renting.afterTaxEstate).toBeLessThan(free.afterTaxEstate - 100_000)
+  })
+})
+
 // Each job runs many Monte Carlo simulations, which takes several times longer
 // on CI runners than on a desktop.
 describe('runProposalJob', { timeout: 120_000 }, () => {
@@ -153,6 +181,38 @@ describe('runProposalJob', { timeout: 120_000 }, () => {
     const p = plan(30_000, { accounts: [{ id: 'r', ownerId: 'a', type: 'RRSP', balance: 900_000 }] })
     const update = await job(p)
     expect(update.proposals.flatMap(x => x.changes).some(c => c.kind === 'withdrawalOrder')).toBe(false)
+  })
+
+  const homeProposals = (update: ProposalUpdate) => update.proposals.filter(x => x.changes.some(c => c.kind === 'sellHome'))
+  const home = { id: 'h', ownerId: 'a', label: 'Home', value: 800_000, annualCosts: 6_000 }
+
+  it('proposes selling the home when the plan falls short', async () => {
+    const p = plan(100_000, { properties: [home] })
+    const update = await job(p)
+    expect(update.base.successRate!).toBeLessThan(0.9)
+    const proposals = homeProposals(update)
+    expect(proposals.length).toBeGreaterThan(0)
+    for (const proposal of proposals) {
+      expect(proposal.group).toBe('tradeoff')
+      const applied = planSchema.parse(applyChanges(p, proposal.changes, YEAR))
+      const again = await job(applied)
+      expect(again.base.successRate).toBeCloseTo(proposal.score.successRate!, 10)
+      expect(homeProposals(again)).toHaveLength(0)
+    }
+  })
+
+  it('does not suggest selling the home of a plan that is doing fine', async () => {
+    expect(homeProposals(await job(plan(50_000, { properties: [home] })))).toHaveLength(0)
+  })
+
+  it('does not suggest selling a property that is not the home', async () => {
+    expect(homeProposals(await job(plan(100_000, { properties: [{ ...home, isPrincipalResidence: false }] })))).toHaveLength(0)
+  })
+
+  it('never proposes selling and renting in simple mode, which has no budget for rent', async () => {
+    const p = plan(0, { properties: [home], expenses: { mode: 'simple', replacementRate: 150 }, drawdown: { strategy: { kind: 'initialPct', ratePct: 8 } } })
+    const changes = homeProposals(await job(p)).flatMap(x => x.changes).filter(c => c.kind === 'sellHome')
+    expect(changes.every(c => c.kind === 'sellHome' && c.nextHomeValue > 0)).toBe(true)
   })
 
   it('stops when a newer request replaces it', async () => {

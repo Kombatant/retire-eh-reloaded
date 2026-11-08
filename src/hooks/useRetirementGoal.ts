@@ -7,6 +7,7 @@ interface UseRetirementGoalParams {
   annualSpendingTarget: number
   annualPension: number
   guaranteedIncomeSchedule?: number[]
+  propertySaleSchedule?: number[]
   withdrawalRate: number
   yearsToRetirement: number
   expectedReturn: number
@@ -23,6 +24,7 @@ export function useRetirementGoal({
   annualSpendingTarget,
   annualPension,
   guaranteedIncomeSchedule = [],
+  propertySaleSchedule = [],
   withdrawalRate,
   yearsToRetirement,
   expectedReturn,
@@ -39,6 +41,7 @@ export function useRetirementGoal({
       annualSpendingTarget,
       annualPension,
       guaranteedIncomeSchedule,
+      propertySaleSchedule,
       withdrawalRate,
       yearsToRetirement,
       expectedReturn,
@@ -49,7 +52,7 @@ export function useRetirementGoal({
       plannedGifts,
       effectiveTaxRate,
     }),
-    [currentProjectionData, annualSpendingTarget, annualPension, guaranteedIncomeSchedule, withdrawalRate, yearsToRetirement, expectedReturn, inflationRate, currentAnnualContributions, currentPortfolio, showRealValues, plannedGifts, effectiveTaxRate],
+    [currentProjectionData, annualSpendingTarget, annualPension, guaranteedIncomeSchedule, propertySaleSchedule, withdrawalRate, yearsToRetirement, expectedReturn, inflationRate, currentAnnualContributions, currentPortfolio, showRealValues, plannedGifts, effectiveTaxRate],
   )
 }
 

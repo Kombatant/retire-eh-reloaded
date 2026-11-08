@@ -152,6 +152,7 @@ function PropertyEditor({ prop }: { prop: Property }) {
           checked={prop.sale !== undefined}
           onChange={(on) => update({ sale: on ? { at: { kind: 'age', personId: anchor, age: 75 }, sellingCostPct: 5, replacementValue: 0 } : undefined })}
           label="Sell or downsize"
+          description="What is left after the mortgage and any next home is invested for your retirement and counts toward your goal."
         />
         {prop.sale && (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
