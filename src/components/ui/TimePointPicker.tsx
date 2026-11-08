@@ -1,5 +1,6 @@
-import { controlBase, controlSize } from '@/lib/ui/styles'
 import { Select } from './inputs'
+import { IntegerInput } from './IntegerInput'
+import { FieldIdContext } from './fieldContext'
 import type { TimePoint } from '@/lib/plan/schema'
 
 interface TimePointPickerProps {
@@ -12,8 +13,6 @@ interface TimePointPickerProps {
   currentYear: number
   ariaLabel?: string
 }
-
-const fieldClass = `${controlBase} ${controlSize.md}`
 
 type Kind = 'unset' | TimePoint['kind']
 
@@ -30,17 +29,15 @@ export function TimePointPicker({ value, onChange, personId, unsetLabel, current
     }
   }
 
-  const number = (raw: string, fallback: number) => {
-    const parsed = parseInt(raw, 10)
-    return Number.isFinite(parsed) ? parsed : fallback
-  }
-
+  // The number box has a fixed width on its own wrapper: the shared control
+  // style is `w-full`, which would override a width set on the input itself.
+  // In narrow cells the box wraps under the select instead of squeezing it.
   return (
-    <div className="flex gap-2">
+    <div className="flex flex-wrap gap-2">
       <Select
         value={kind}
         onChange={(e) => changeKind(e.target.value as Kind)}
-        className="flex-1"
+        className="min-w-[8.5rem] flex-1"
         aria-label={ariaLabel}
       >
         {unsetLabel && <option value="unset">{unsetLabel}</option>}
@@ -49,38 +46,24 @@ export function TimePointPicker({ value, onChange, personId, unsetLabel, current
         <option value="age">At age</option>
         <option value="year">In year</option>
       </Select>
-      {value?.kind === 'retirement' && (
-        <input
-          type="number"
-          value={value.offset ?? 0}
-          onChange={(e) => onChange({ ...value, offset: number(e.target.value, 0) })}
-          className={`${fieldClass} w-20 shrink-0`}
-          aria-label="Years after retirement"
-          title="Years after (+) or before (−) retirement"
-        />
-      )}
-      {value?.kind === 'age' && (
-        <input
-          type="number"
-          value={value.age}
-          min={0}
-          max={120}
-          onChange={(e) => onChange({ ...value, age: number(e.target.value, value.age) })}
-          className={`${fieldClass} w-20 shrink-0`}
-          aria-label="Age"
-        />
-      )}
-      {value?.kind === 'year' && (
-        <input
-          type="number"
-          value={value.year}
-          min={1900}
-          max={2200}
-          onChange={(e) => onChange({ ...value, year: number(e.target.value, value.year) })}
-          className={`${fieldClass} w-24 shrink-0`}
-          aria-label="Year"
-        />
-      )}
+      {/* A surrounding Field's label names the select; the number box has its own. */}
+      <FieldIdContext.Provider value={undefined}>
+        {value?.kind === 'retirement' && (
+          <div className="w-20 shrink-0" title="Years after (+) or before (−) retirement">
+            <IntegerInput value={value.offset ?? 0} min={-60} max={60} onChange={(offset) => onChange({ ...value, offset })} ariaLabel="Years after retirement" />
+          </div>
+        )}
+        {value?.kind === 'age' && (
+          <div className="w-20 shrink-0">
+            <IntegerInput value={value.age} min={0} max={120} onChange={(age) => onChange({ ...value, age })} ariaLabel="Age" />
+          </div>
+        )}
+        {value?.kind === 'year' && (
+          <div className="w-24 shrink-0">
+            <IntegerInput value={value.year} min={1900} max={2200} onChange={(year) => onChange({ ...value, year })} ariaLabel="Year" />
+          </div>
+        )}
+      </FieldIdContext.Provider>
     </div>
   )
 }

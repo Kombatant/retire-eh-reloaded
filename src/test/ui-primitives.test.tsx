@@ -7,6 +7,7 @@ import { SubTabs } from '@/components/ui/SubTabs'
 import { NumberInput } from '@/components/ui/NumberInput'
 import { Field } from '@/components/ui/Field'
 import { TextInput } from '@/components/ui/inputs'
+import { TimePointPicker } from '@/components/ui/TimePointPicker'
 
 describe('Sheet', () => {
   it('shows its content only while open and closes on Escape', () => {
@@ -115,5 +116,33 @@ describe('Field', () => {
   it('labels the control inside it', () => {
     render(<Field label="Plan name"><TextInput defaultValue="Main" /></Field>)
     expect(screen.getByLabelText('Plan name')).toHaveValue('Main')
+  })
+})
+
+describe('TimePointPicker', () => {
+  it('keeps the field label on the select and edits the number on its own', () => {
+    const onChange = vi.fn()
+    const { container, rerender } = render(
+      <Field label="Starts"><TimePointPicker value={{ kind: 'age', personId: 'a', age: 67 }} onChange={onChange} personId="a" currentYear={2026} /></Field>,
+    )
+    expect(screen.getByLabelText('Starts').tagName).toBe('SELECT')
+    expect(container.querySelectorAll('[id]').length).toBe(1)
+    expect(screen.getByRole('textbox', { name: 'Age' })).toHaveValue('67')
+
+    rerender(<TimePointPicker value={{ kind: 'retirement', personId: 'a', offset: 0 }} onChange={onChange} personId="a" currentYear={2026} />)
+    const offset = screen.getByRole('textbox', { name: 'Years after retirement' })
+    act(() => offset.focus())
+    fireEvent.change(offset, { target: { value: '-3' } })
+    expect(onChange).toHaveBeenLastCalledWith({ kind: 'retirement', personId: 'a', offset: -3 })
+
+    // A partly typed year is not saved.
+    onChange.mockClear()
+    rerender(<TimePointPicker value={{ kind: 'year', year: 2031 }} onChange={onChange} personId="a" currentYear={2026} />)
+    const year = screen.getByRole('textbox', { name: 'Year' })
+    act(() => year.focus())
+    fireEvent.change(year, { target: { value: '20' } })
+    expect(onChange).not.toHaveBeenCalled()
+    fireEvent.change(year, { target: { value: '2035' } })
+    expect(onChange).toHaveBeenLastCalledWith({ kind: 'year', year: 2035 })
   })
 })

@@ -22,10 +22,14 @@ export function IntegerInput({ value, onChange, min, max, className, size = 'md'
 
   const display = focused && draft !== null ? draft : String(value)
 
+  const allowNegative = min !== undefined && min < 0
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const raw = e.target.value.replace(/\D/g, '').replace(/^0+(?=\d)/, '')
+    const typed = e.target.value.trim()
+    const sign = allowNegative && /^[-−]/.test(typed) ? '-' : ''
+    const raw = sign + typed.replace(/\D/g, '').replace(/^0+(?=\d)/, '')
     setDraft(raw)
-    if (raw === '') return
+    if (raw === '' || raw === '-') return
     const num = parseInt(raw, 10)
     if (min !== undefined && num < min) return
     if (max !== undefined && num > max) return
@@ -34,7 +38,7 @@ export function IntegerInput({ value, onChange, min, max, className, size = 'md'
 
   const handleBlur = () => {
     setFocused(false)
-    if (draft === null || draft === '') {
+    if (draft === null || draft === '' || draft === '-') {
       setDraft(null)
       return
     }
@@ -47,7 +51,7 @@ export function IntegerInput({ value, onChange, min, max, className, size = 'md'
   return (
     <input
       type="text"
-      inputMode="numeric"
+      inputMode={allowNegative ? 'text' : 'numeric'}
       value={display}
       onFocus={() => {
         setFocused(true)

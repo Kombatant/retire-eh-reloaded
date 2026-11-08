@@ -9,6 +9,7 @@ import { QUOTE_PROVIDERS, isStale, type QuoteProvider } from '@/lib/market/quote
 import { formatMoney } from '@/lib/formatting'
 import { NumberInput } from '@/components/ui/NumberInput'
 import { DecimalInput } from '@/components/ui/inputs'
+import { IntegerInput } from '@/components/ui/IntegerInput'
 import { TimePointPicker } from '@/components/ui/TimePointPicker'
 import { InfoTooltip } from '@/components/ui/InfoTooltip'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
@@ -93,7 +94,7 @@ function VestingSchedule({ holding, onChange, onSellToCover, personId }: {
         {total > 0 && (
           <span className="flex items-center gap-1.5 text-fg-secondary">
             Spread {formatMoney(total)} shares evenly over
-            <input type="number" min={1} max={10} value={years} onChange={(e) => setYears(Math.min(10, Math.max(1, parseInt(e.target.value, 10) || 1)))} className="w-14 px-1.5 py-1 border border-border-strong rounded bg-surface" aria-label="Years to vest" />
+            <span className="w-14"><IntegerInput value={years} min={1} max={10} onChange={setYears} size="sm" ariaLabel="Years to vest" /></span>
             years
             <button onClick={spread} className="text-accent font-medium min-h-[28px]">Apply</button>
           </span>
