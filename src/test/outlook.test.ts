@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { retirementOutlook, moneyLasts, retirementIncomeSources, retirementSpendingTarget } from '@/lib/insights/outlook'
-import { calculateRetirementGoal } from '@/lib/calculations'
+import { calculateRetirementGoal, calculateRetirementGoalWithIncome } from '@/lib/calculations'
 import type { PlanV2 } from '@/lib/plan/schema'
 import { createDefaultPlan } from '@/lib/plan/defaults'
 import { simulatePlan } from '@/lib/sim'
@@ -44,6 +44,56 @@ describe('retirementOutlook', () => {
     // 56,000 + (80,000 − 70,000) × 0.8
     expect(o.afterTaxIncome).toBe(64_000)
     expect(o.estimatedTax).toBe(16_000)
+  })
+})
+
+describe('progress past the goal', () => {
+  const goalFor = (total: number, annualPension: number, rrsp = 0) => calculateRetirementGoalWithIncome({
+    currentProjectionData: [{ Total: total, RRSP: rrsp }] as never, annualSpendingTarget: 60_000, annualPension,
+    withdrawalRate: 4, yearsToRetirement: 10, expectedReturn: 7, inflationRate: 2, currentAnnualContributions: 0, currentPortfolio: 0,
+    effectiveTaxRate: rrsp > 0 ? 25 : 0,
+  })
+
+  it('reports income room rather than treating surplus savings as spending', () => {
+    const o = retirementOutlook(goalFor(600_000, 40_000), {})
+    expect(o.progressPct).toBeCloseTo(120, 6)
+    expect(o.annualRoom).toBeCloseTo(4_000, 6)
+  })
+
+  it('keeps room proportionate when guaranteed income covers most of the goal', () => {
+    const o = retirementOutlook(goalFor(500_000, 58_000), {})
+    expect(o.progressPct).toBeCloseTo(1000, 6)
+    expect(o.annualRoom).toBeCloseTo(18_000, 6)
+  })
+
+  it('measures room on the weaker after-tax basis when tax is known', () => {
+    // RRSP tax leaves 500k of 600k: exactly the 500k needed, so no room.
+    const o = retirementOutlook(goalFor(600_000, 40_000, 400_000), { effectiveTaxRate: 25 })
+    expect(o.progressPct).toBeCloseTo(100, 6)
+    expect(o.progressBasis).toBe('afterTax')
+    expect(o.annualRoom).toBeCloseTo(0, 6)
+  })
+
+  it('counts surplus guaranteed income as room when no savings are needed', () => {
+    const o = retirementOutlook(goalFor(100_000, 70_000), {})
+    expect(o.noSavingsNeeded).toBe(true)
+    expect(o.progressPct).toBe(100)
+    // 4,000 from savings + 10,000 of guaranteed income above the goal.
+    expect(o.annualRoom).toBeCloseTo(14_000, 6)
+  })
+
+  it('reports no room when the simulation runs short', () => {
+    const o = retirementOutlook(goalFor(600_000, 40_000), { planFunded: false })
+    expect(o.onTrack).toBe(false)
+    expect(o.progressPct).toBeCloseTo(120, 6)
+    expect(o.annualRoom).toBeNull()
+    expect(o.metOnPaperOnly).toBe(true)
+  })
+
+  it('reports no room below the goal', () => {
+    const o = retirementOutlook(goalFor(400_000, 40_000), {})
+    expect(o.annualRoom).toBeNull()
+    expect(o.metOnPaperOnly).toBe(false)
   })
 })
 

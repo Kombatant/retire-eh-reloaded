@@ -1,5 +1,8 @@
-import type { RetirementGoalResult } from '@/lib/calculations'
-import type { RetirementTaxSnapshot } from '@/lib/sim/taxSnapshot'
+import { calculateRetirementGoalWithIncome, giftsAfterRetirement, type RetirementGoalResult, type RetirementGoalWithIncome } from '@/lib/calculations'
+import { buildRetirementTaxSnapshot, type RetirementTaxSnapshot } from '@/lib/sim/taxSnapshot'
+import { householdBaseAge, toProjectionData } from '@/lib/sim/legacyAdapter'
+import { runSucceeded } from '@/lib/sim/risk'
+import { toLegacyAssumptions } from '@/lib/plan/legacy-view'
 import type { PlanV2 } from '@/lib/plan/schema'
 import type { CompiledPlan, SimResult } from '@/lib/sim/types'
 import { youngestPerson } from '@/lib/plan/time'
@@ -18,6 +21,14 @@ export interface RetirementOutlook {
   estimatedTax: number | null
   // Extra yearly saving that would close the gap (0 when on track).
   extraSavingsNeeded: number
+  // Roughly how much more the plan could spend each year and still meet the
+  // goal; null when it isn't on track. Measured in income, not savings, because
+  // guaranteed income means progress past 100% overstates spending room.
+  annualRoom: number | null
+  // Guaranteed income alone covers the goal, so progressPct has nothing to measure.
+  noSavingsNeeded: boolean
+  // The goal is met by the savings rule, but the simulation itself runs short.
+  metOnPaperOnly: boolean
 }
 
 export function retirementOutlook(
@@ -37,15 +48,62 @@ export function retirementOutlook(
     ? Math.max(0, tax.afterTaxIncome + (goal.projectedAnnualIncome - tax.preTaxIncome) * (1 - tax.averageTaxRate / 100))
     : (opts.afterTaxAnnualIncome ?? goal.afterTaxProjectedAnnualIncome)
 
+  const progressPct = taxAware ? Math.min(goal.progress, goal.afterTaxProgress) : goal.progress
+  // The same weaker-of-both basis as progressPct, so the two can't disagree.
+  const comparableIncome = taxAware
+    ? Math.min(goal.projectedAnnualIncome, goal.afterTaxProjectedAnnualIncome)
+    : goal.projectedAnnualIncome
+
   return {
     onTrack,
-    progressPct: taxAware ? Math.min(goal.progress, goal.afterTaxProgress) : goal.progress,
+    progressPct,
     progressBasis: taxAware && goal.afterTaxProgress < goal.progress ? 'afterTax' : 'preTax',
+    annualRoom: onTrack ? Math.max(0, comparableIncome - goal.requiredAnnualIncome) : null,
+    noSavingsNeeded: goal.requiredPortfolio <= 0 && goal.requiredAnnualIncome > 0,
+    metOnPaperOnly: progressPct >= 100 && opts.planFunded === false,
     preTaxIncome: goal.projectedAnnualIncome,
     afterTaxIncome,
     estimatedTax: tax ? Math.max(0, goal.projectedAnnualIncome - afterTaxIncome) : null,
     extraSavingsNeeded: onTrack ? 0 : Math.max(goal.additionalAnnualSavings, taxAware ? goal.afterTaxAdditionalAnnualSavings : 0),
   }
+}
+
+// The goal and "on track" verdict for a simulated plan. Used by the live
+// views through usePlanOutlook and by the proposals worker, which has no React
+// context, so both always reach the same verdict.
+export function planGoalOutlook(
+  plan: PlanV2,
+  c: CompiledPlan,
+  result: SimResult,
+  nowYear: number,
+  showRealValues = true,
+): { goal: RetirementGoalWithIncome; outlook: RetirementOutlook } {
+  const D = c.drawdownStartOffset
+  const assumptions = toLegacyAssumptions(plan, { showRealValues }, nowYear)
+  const row = result.rows[D]
+  const tax = buildRetirementTaxSnapshot(c, result, showRealValues)
+  const goal = calculateRetirementGoalWithIncome({
+    currentProjectionData: toProjectionData(c, result, showRealValues),
+    annualSpendingTarget: retirementSpendingTarget(c, result),
+    annualPension: row ? row.people.reduce((s, p) => s + p.pension + p.cpp + p.oas, 0) / row.cpi : 0,
+    guaranteedIncomeSchedule: result.rows.slice(D).map(r => r.guaranteedIncome / r.cpi),
+    withdrawalRate: assumptions.withdrawalRate,
+    yearsToRetirement: D,
+    expectedReturn: assumptions.expectedReturn,
+    inflationRate: assumptions.inflationRate,
+    currentAnnualContributions: plan.accounts.reduce((s, a) => s + (a.contributions[0]?.amount ?? 0), 0),
+    currentPortfolio: plan.accounts.reduce((s, a) => s + (a.balance || 0), 0),
+    showRealValues,
+    plannedGifts: giftsAfterRetirement(assumptions.plannedGifts, householdBaseAge(c) + D),
+    effectiveTaxRate: tax?.effectiveRrspTaxRate,
+  })
+  const outlook = retirementOutlook(goal, {
+    effectiveTaxRate: tax?.effectiveRrspTaxRate,
+    afterTaxAnnualIncome: tax?.afterTaxIncome,
+    taxSummary: tax,
+    planFunded: runSucceeded(result),
+  })
+  return { goal, outlook }
 }
 
 export type IncomeSourceKey = 'withdrawals' | 'cpp' | 'oas' | 'gis' | 'pension'

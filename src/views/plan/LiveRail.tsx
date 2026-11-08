@@ -5,6 +5,7 @@ import { usePlanOutlook } from '@/hooks/usePlanOutlook'
 import { money, moneyCompact } from '@/lib/formatting'
 import { cn } from '@/lib/ui/cn'
 import { MoneyModeBadge } from '@/components/ui/Badge'
+import { GoalProgress } from '@/components/GoalProgress'
 import { moneyMode } from '@/lib/ui/money'
 
 // The few numbers that answer "how is my plan doing?", kept beside the inputs
@@ -12,7 +13,6 @@ import { moneyMode } from '@/lib/ui/money'
 function RailBody() {
   const o = usePlanOutlook()
   const { navigate } = useRoute()
-  const progress = Math.max(0, Math.min(100, o.outlook.progressPct))
 
   return (
     <div className="space-y-5">
@@ -28,23 +28,7 @@ function RailBody() {
           {o.outlook.onTrack ? 'On track' : 'Short of your goal'}
         </div>
         <div className="mt-3">
-          <div className="flex justify-between text-xs text-fg-muted">
-            <span>Goal progress{o.outlook.progressBasis === 'afterTax' ? ', after tax' : ''}</span>
-            <span className="font-medium text-fg">{Math.round(o.outlook.progressPct)}%</span>
-          </div>
-          <div
-            className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-surface-muted"
-            role="progressbar"
-            aria-label="Goal progress"
-            aria-valuenow={Math.round(progress)}
-            aria-valuemin={0}
-            aria-valuemax={100}
-          >
-            <div
-              className={cn('h-full rounded-full', o.outlook.onTrack ? 'bg-success' : 'bg-warning')}
-              style={{ width: `${progress}%` }}
-            />
-          </div>
+          <GoalProgress outlook={o.outlook} barClassName="h-1.5" onTestRoom={() => navigate({ view: 'proposals' })} />
         </div>
         {!o.outlook.onTrack && o.outlook.extraSavingsNeeded > 0 && (
           <p className="mt-2 text-xs text-fg-secondary">
@@ -114,7 +98,7 @@ export function MobileSummaryBar() {
           ? <CheckCircle2 className="h-4 w-4 shrink-0 text-success" aria-hidden />
           : <AlertTriangle className="h-4 w-4 shrink-0 text-warning" aria-hidden />}
         <span className="min-w-0 flex-1 truncate text-sm">
-          <span className="font-medium text-fg">{Math.round(o.outlook.progressPct)}% of goal</span>
+          <span className="font-medium text-fg">{o.outlook.noSavingsNeeded ? 'Goal met' : `${Math.round(o.outlook.progressPct)}% of goal`}</span>
           <span className="text-fg-muted"> · {money(o.outlook.afterTaxIncome)}/yr after tax</span>
         </span>
         <ChevronUp className={cn('h-4 w-4 shrink-0 text-fg-muted transition-transform', open ? 'rotate-0' : 'rotate-180')} aria-hidden />

@@ -23,6 +23,7 @@ import { DashboardView } from '@/views/dashboard/DashboardView'
 import { ProjectionsView } from '@/views/projections/ProjectionsView'
 import { LearnView } from '@/views/learn/LearnView'
 import { RiskView } from '@/views/risk/RiskView'
+import { ProposalsView } from '@/views/proposals/ProposalsView'
 import { CashFlowView } from '@/views/cashflow/CashFlowView'
 import { CompareView } from '@/views/compare/CompareView'
 import { TrackingView } from '@/views/tracking/TrackingView'
@@ -35,6 +36,7 @@ const VIEWS: Record<ViewId, () => ReactNode> = {
   cashflow: () => <CashFlowView />,
   taxes: () => <TaxesView />,
   risk: () => <RiskView />,
+  proposals: () => <ProposalsView />,
   compare: () => <CompareView />,
   tracking: () => <TrackingView />,
   learn: () => <LearnView />,

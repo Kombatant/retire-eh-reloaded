@@ -1,6 +1,6 @@
 import type { ComponentType } from 'react'
 import {
-  ArrowDownToLine, BookOpen, Columns3, Dice5, FilePen, Home, Landmark, LayoutDashboard, LineChart,
+  ArrowDownToLine, BookOpen, Columns3, Dice5, FilePen, Home, Landmark, LayoutDashboard, Lightbulb, LineChart,
   PiggyBank, Receipt, ShoppingBasket, SlidersHorizontal, TrendingUp, Users, Waves, Wallet,
 } from 'lucide-react'
 import type { PlanSection, ViewId } from '@/lib/ui/route'
@@ -28,6 +28,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { view: 'cashflow', label: 'Cash flow', icon: Waves },
       { view: 'taxes', label: 'Taxes', icon: Receipt },
       { view: 'risk', label: 'Risk', icon: Dice5 },
+      { view: 'proposals', label: 'Proposals', icon: Lightbulb },
     ],
   },
   {
@@ -64,6 +65,7 @@ export const VIEW_LABELS: Record<ViewId, string> = {
   cashflow: 'Cash flow',
   taxes: 'Taxes',
   risk: 'Risk',
+  proposals: 'Proposals',
   compare: 'Compare',
   tracking: 'Tracking',
   learn: 'Learn',

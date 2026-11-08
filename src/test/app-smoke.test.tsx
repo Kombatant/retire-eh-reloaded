@@ -28,7 +28,7 @@ beforeEach(() => {
   document.documentElement.classList.remove('dark')
 })
 
-const PAGES = ['Plan', 'Dashboard', 'Projections', 'Cash flow', 'Taxes', 'Risk', 'Compare', 'Tracking', 'Learn']
+const PAGES = ['Plan', 'Dashboard', 'Projections', 'Cash flow', 'Taxes', 'Risk', 'Proposals', 'Compare', 'Tracking', 'Learn']
 const PLAN_SECTIONS = ['Household', 'Savings', 'Income', 'Spending', 'Home & debts', 'Withdrawals', 'Assumptions']
 
 describe('App smoke test', () => {
@@ -52,6 +52,17 @@ describe('App smoke test', () => {
       expect(screen.queryByText(/Something went wrong/i)).toBeNull()
     }
   })
+
+  it('shows tested proposals and applies one with undo', async () => {
+    window.history.replaceState(null, '', '/#/proposals')
+    render(<App />)
+    await screen.findByText(/changes tested/, {}, { timeout: 20_000 })
+    expect(screen.queryByText(/Something went wrong/i)).toBeNull()
+    fireEvent.click(screen.getAllByRole('button', { name: 'Apply to this plan' })[0])
+    expect(await screen.findByText(/^Applied:/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
+    expect(screen.queryByText(/^Applied:/)).toBeNull()
+  }, 30_000)
 
   it('opens the page named in the URL hash', () => {
     window.history.replaceState(null, '', '/#/learn')

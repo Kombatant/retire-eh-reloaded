@@ -983,6 +983,10 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
       let solvedExactly = false
       if (c.strategy === 'expenses' && v2 && detailed) {
         target = solveIncreasing(w => afterTaxCash(planWithdrawal(w)) - row.spending - sum(contributions), 0, Math.max(available, 1))
+        // When RRIF/LIF minimums alone cover the year the solver stops at 0.
+        // They still pay for spending; only what is left over is reinvested,
+        // as surplus below.
+        target = Math.max(target, sum(planWithdrawal(target).taken))
         solvedExactly = true
       } else if (c.strategy === 'expenses' && v2) {
         // Simple mode: the target is a pre-tax income, so no tax gross-up, but
@@ -993,6 +997,11 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
           return guaranteedBeforeGis() + gis + row.otherIncome + employmentTotal() + sum(planned.taken)
         }
         target = solveIncreasing(w => grossCash(w) - row.spending, 0, Math.max(available, 1))
+        // When RRIF/LIF minimums alone cover the target the solver stops at 0.
+        // Only the part of the minimums beyond the target is excess.
+        if (target === 0) {
+          target = Math.max(0, sum(planWithdrawal(0).taken) - Math.max(0, grossCash(0) - row.spending))
+        }
         // The solver stops at what is available; record the real gap.
         const unfunded = row.spending - grossCash(Math.min(target, available))
         if (unfunded > 0.5) {
@@ -1076,8 +1085,12 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
           const neededRegistered = finalPlan.registered.map((v, i) =>
             Math.max(0, v - (meltdownPlan?.registered[i] ?? 0) - forcedExcess * (v / registeredTotal)))
           const neededNonEligible = finalPlan.nonEligible.map((v, i) => (finalPlan.registered[i] > 0 ? v * (neededRegistered[i] / finalPlan.registered[i]) : 0))
-          const neededTax = householdTax(taxInputs(neededRegistered, noDeduction, undefined, neededNonEligible)).total * k
-          reinvest(unneeded - Math.max(0, row.tax - neededTax), aliveIdx[0])
+          const neededInputs = taxInputs(neededRegistered, noDeduction, undefined, neededNonEligible)
+          const neededTax = householdTax(neededInputs).total * k
+          // The extra income can also reduce GIS that was helping pay for
+          // spending, so that money isn't available to reinvest either.
+          const lostGis = Math.max(0, sum(gisFor(neededInputs)) * k - row.gis)
+          reinvest(unneeded - Math.max(0, row.tax - neededTax) - lostGis, aliveIdx[0])
         }
 
         if (t === D) {

@@ -33,6 +33,10 @@ The application is 100% pure TypeScript (React + Vite). All calculations run cli
   - Results stream in batches and are cached by plan.
   - In tests, where jsdom has no Worker, a small sample runs synchronously instead.
 - **Insights** (`src/lib/insights/`): Sankey data, CSV export, FI and Coast FI, milestones, plan comparison, tax-bracket position and the per-year account breakdown (balances and withdrawals by account category, `accountBreakdown.ts`). Each is a pure, tested helper.
+- **Proposals** (`src/lib/insights/proposals.ts`): each candidate is a serializable `Change`, applied with `applyChanges` and scored by re-running `simulate` and Monte Carlo on the same seeds as the baseline. A change is shown only if it beats the plan by a meaningful margin (`isImprovement`).
+  - The page runs `runProposalJob` in its own Web Worker (`src/workers/proposals.worker.ts`) through `useProposals`.
+  - Add a new lever by adding a `Change` kind, its `applyChange` and `describeChange` cases, and a candidate list.
+  - The goal comes from `planGoalOutlook` (`src/lib/insights/outlook.ts`), which the Dashboard also uses through `usePlanOutlook`, so both give the same verdict.
 - **Original engine** (`src/lib/legacy/`): kept only as the reference for `src/test/sim-parity.test.ts`.
 
 ## GitHub Actions
@@ -72,6 +76,7 @@ A grouped sidebar (a drawer on small screens) with hash routes. Each page shows 
 | | Cash flow | `#/cashflow/<flow\|table>` | Yearly Sankey, year-by-year table with column presets and CSV export |
 | | Taxes | `#/taxes/<retirement\|by-year\|brackets>` | Tax at retirement, tax by year, bracket room |
 | | Risk | `#/risk/<monte-carlo\|historical\|stress>` | Success KPIs; fan chart, historical backtest, stress tests |
+| | Proposals | `#/proposals` | Changes tested against the current plan: best combination, free changes, trade-offs or room to spare; try as a new plan or apply with undo |
 | Tools | Compare | `#/compare` | 2–3 saved plans side by side |
 | | Tracking | `#/tracking` | Dated balance snapshots, actual vs. projected, rebaseline |
 | — | Learn | `#/learn/<topic>` | Methodology articles |
@@ -135,6 +140,7 @@ Provider order in `App.tsx`: ThemeProvider › ToastProvider › RouteProvider �
 - `sim-risk`, `rng`: Monte Carlo, backtest, crash scenarios.
 - `audit-regressions`: scenarios the engine once got wrong (funding verdicts, one-time costs, annual returns, pension eligibility, payroll, LIF jurisdiction, room limits, past events, storage recovery, plan diagnostics).
 - `insights`, `outlook`: Sankey, CSV, FI metrics, milestones, comparison, brackets; goal outlook, income sources, money-lasts.
+- `proposals`: applying changes, which proposals are offered, and that a proposal's numbers match applying it.
 - `cpp-history`: CPP/QPP estimate from work history.
 - `sim-stocks`, `stock-quotes`: stock holdings, RSU/ESPP, sell plans, scenarios, quote providers (mocked fetch).
 - `route`, `advanced-settings`, `ui-primitives`: hash routes, Essentials/Advanced detection, Sheet/SegmentedControl/SubTabs/NumberInput/Field.

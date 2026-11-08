@@ -10,7 +10,7 @@ export const PLAN_SECTIONS = [
 export type PlanSection = typeof PLAN_SECTIONS[number]
 
 export const VIEWS = [
-  'plan', 'dashboard', 'projections', 'cashflow', 'taxes', 'risk', 'compare', 'tracking', 'learn',
+  'plan', 'dashboard', 'projections', 'cashflow', 'taxes', 'risk', 'proposals', 'compare', 'tracking', 'learn',
 ] as const
 export type ViewId = typeof VIEWS[number]
 

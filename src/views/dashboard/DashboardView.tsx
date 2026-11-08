@@ -23,6 +23,7 @@ import { Stat } from '@/components/ui/Stat'
 import { Button } from '@/components/ui/Button'
 import { MoneyModeBadge } from '@/components/ui/Badge'
 import { Disclosure } from '@/components/ui/Disclosure'
+import { GoalProgress } from '@/components/GoalProgress'
 
 export function DashboardView() {
   const { activePlan } = usePlanStore()
@@ -82,7 +83,6 @@ function StatusHero() {
   const { compiledPlan, simulation } = useProjectionContext()
   const testable = successIsMeaningful(compiledPlan, simulation)
   const success = risk.monteCarlo ? Math.round(risk.monteCarlo.successRate * 100) : null
-  const progress = Math.max(0, Math.min(100, o.outlook.progressPct))
   const target = o.goal.requiredAnnualIncome
   const onTrack = o.outlook.onTrack
 
@@ -100,13 +100,7 @@ function StatusHero() {
             <span className="font-medium text-fg">{money(target)}</span> {o.goalIsAfterTax ? 'after tax' : 'before tax'}.
           </p>
           <div className="mt-4 max-w-xl">
-            <div className="flex justify-between text-xs text-fg-muted">
-              <span>Goal progress{o.outlook.progressBasis === 'afterTax' ? ', after tax' : ''}</span>
-              <span className="font-medium text-fg">{Math.round(o.outlook.progressPct)}%</span>
-            </div>
-            <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-surface-muted" role="progressbar" aria-label="Goal progress" aria-valuenow={Math.round(progress)} aria-valuemin={0} aria-valuemax={100}>
-              <div className={cn('h-full rounded-full', onTrack ? 'bg-success' : 'bg-warning')} style={{ width: `${progress}%` }} />
-            </div>
+            <GoalProgress outlook={o.outlook} barClassName="h-2" />
           </div>
         </div>
 
@@ -129,6 +123,9 @@ function StatusHero() {
               Save {money(o.outlook.extraSavingsNeeded)} more a year <ArrowRight className="h-3.5 w-3.5" aria-hidden />
             </Button>
           )}
+          <Button size="sm" onClick={() => navigate({ view: 'proposals' })}>
+            See proposals <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+          </Button>
         </div>
       </div>
     </Card>

@@ -451,3 +451,72 @@ describe('plan diagnostics', () => {
     expect(isRealDate('2025-02-29')).toBe(false)
   })
 })
+
+describe('money forced out of registered accounts', () => {
+  const retiree = (spend: number, extra: Partial<PlanV2Input> = {}) => plan({
+    people: [person(75, 65)],
+    accounts: [{ id: 'r', ownerId: 'a', type: 'RRIF', balance: 1_000_000 }, { id: 'n', ownerId: 'a', type: 'NONREG', balance: 0 }],
+    expenses: { mode: 'detailed', items: [{ id: 'e', label: 'Living', amount: spend, frequency: 'annual' }] },
+    drawdown: { strategy: { kind: 'expenses' } },
+    ...extra,
+  })
+  const firstRow = (p: PlanV2) => {
+    const c = compilePlan(p, { startYear: YEAR })
+    return simulate(c, deterministicPath(c.years, 0, 0)).rows[0]
+  }
+
+  it('spends a RRIF minimum that more than covers the budget', () => {
+    const row = firstRow(retiree(30_000))
+    expect(row.withdrawal).toBeCloseTo(56_700, 0)
+    expect(row.shortfall).toBe(0)
+    expect(row.afterTaxIncome).toBeGreaterThanOrEqual(30_000)
+    // Only what is left after spending and tax goes back in.
+    expect(row.reinvested).toBeCloseTo(row.withdrawal - row.tax - 30_000, 0)
+    expect(row.balancesEnd[0] + row.balancesEnd[1]).toBeCloseTo(1_000_000 - 30_000 - row.tax, 0)
+  })
+
+  it('treats a bigger budget no worse than a smaller one', () => {
+    const shortfalls = [20_000, 30_000, 40_000, 60_000, 70_000].map(spend => firstRow(retiree(spend)).shortfall)
+    expect(shortfalls).toEqual([0, 0, 0, 0, 0])
+  })
+
+  it('reinvests only the excess of a RRIF minimum in simple mode', () => {
+    const p = retiree(0, {
+      people: [person(70, 73)],
+      incomes: [{ id: 'i', ownerId: 'a', label: 'Salary', kind: 'employment', amount: 40_000, frequency: 'annual', to: { kind: 'retirement', personId: 'a', offset: 0 } }],
+      expenses: { mode: 'simple', replacementRate: 75 },
+    })
+    const c = compilePlan(p, { startYear: YEAR })
+    const row = simulate(c, deterministicPath(c.years, 0, 0)).rows[c.drawdownStartOffset]
+    expect(c.simpleSpendingTarget).toBe(30_000)
+    const minimum = row.people[0].minimumWithdrawals
+    expect(minimum).toBeGreaterThan(c.simpleSpendingTarget)
+    expect(row.withdrawal).toBeCloseTo(minimum, 0)
+    expect(row.grossIncome).toBeGreaterThanOrEqual(c.simpleSpendingTarget - 1)
+    expect(row.reinvested).toBeLessThanOrEqual(minimum - c.simpleSpendingTarget + 1)
+  })
+
+  it('counts GIS lost to a meltdown before reinvesting', () => {
+    const p = plan({
+      people: [person(70, 65, { oas: { startAge: 65, yearsInCanadaAfter18: 40 } })],
+      accounts: [
+        { id: 't', ownerId: 'a', type: 'TFSA', balance: 300_000 },
+        { id: 'r', ownerId: 'a', type: 'RRSP', balance: 500_000 },
+      ],
+      expenses: { mode: 'detailed', items: [{ id: 'e', label: 'Living', amount: 25_000, frequency: 'annual' }] },
+      drawdown: {
+        strategy: { kind: 'expenses' },
+        order: 'custom',
+        customOrder: ['TFSA', 'CASH', 'STOCK', 'NONREG', 'RRIF', 'RRSP', 'LIF', 'LIRA', 'FHSA'],
+        meltdown: { enabled: true, targetTaxableIncome: 60_000 },
+      },
+    })
+    const row = firstRow(p)
+    const without = firstRow({ ...p, drawdown: { ...p.drawdown, meltdown: { enabled: false, targetTaxableIncome: 60_000 } } })
+    expect(without.gis).toBeGreaterThan(0)
+    expect(row.gis).toBeLessThan(without.gis)
+    expect(row.meltdownWithdrawals).toBeGreaterThan(0)
+    expect(row.shortfall).toBe(0)
+    expect(row.afterTaxIncome).toBeCloseTo(25_000, 0)
+  })
+})
