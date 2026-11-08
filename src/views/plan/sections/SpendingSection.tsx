@@ -250,7 +250,7 @@ function PhasesCard({ anchorId }: { anchorId: string }) {
     <Card>
       <CardHeader
         title="Spending phases"
-        description="Scale flexible spending through retirement, e.g. 120% in the active early years and 70% later on."
+        description="Scale flexible spending through retirement, e.g. 120% in the active early years and 70% later on. Each phase lasts until the next one starts."
         actions={
           <AddMenu
             label="Add phase"

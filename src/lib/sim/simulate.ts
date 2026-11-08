@@ -189,9 +189,12 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
     if (!detailed) continue
     addInto(expense.essential ? essentialSpending : discretionarySpending, flowSeries(expense.flow, cpi, path.inflation))
   }
+  // Phases usually have no end date, so they overlap. The one that started most
+  // recently wins: each percentage is of the full flexible budget, and multiplying
+  // them would make "70%, then 65%" mean 45.5%.
   const phaseMultiplier = new Float64Array(years).fill(1)
-  for (const phase of c.phases) {
-    for (let t = Math.max(0, phase.startOffset); t < Math.min(years, phase.endOffset); t++) phaseMultiplier[t] *= phase.multiplier
+  for (const phase of [...c.phases].sort((a, b) => a.startOffset - b.startOffset)) {
+    for (let t = Math.max(0, phase.startOffset); t < Math.min(years, phase.endOffset); t++) phaseMultiplier[t] = phase.multiplier
   }
 
   const balances = c.accounts.map(a => Math.max(0, a.initialBalance))

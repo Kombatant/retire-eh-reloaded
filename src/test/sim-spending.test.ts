@@ -170,6 +170,40 @@ describe('detailed spending', () => {
     expect(rows.find(r => r.people[0].age === 75)!.spending).toBeCloseTo(55000, 6)
   })
 
+  describe('with several spending phases', () => {
+    const atAge = (age: number) => ({ kind: 'age' as const, personId: 'a', age })
+    const phase = (id: string, from: number, pct: number, to?: number) =>
+      ({ id, name: id, from: atAge(from), to: to === undefined ? undefined : atAge(to), discretionaryMultiplierPct: pct })
+    const spendingByAge = (phases: ReturnType<typeof phase>[]) => {
+      const base = retiree('TFSA')
+      const rows = simulatePlan({ ...base, expenses: { ...base.expenses, phases } }, flat).result.rows
+      return (age: number) => rows.find(r => r.people[0].age === age)!.spending
+    }
+
+    const goSlowNo = [phase('go', 65, 100), phase('slow', 75, 70), phase('no', 85, 65)]
+
+    it('applies each percentage on its own, not multiplied by earlier phases', () => {
+      const spending = spendingByAge(goSlowNo)
+      expect(spending(74)).toBeCloseTo(60000, 6)
+      expect(spending(84)).toBeCloseTo(57000, 6)
+      // 65% of the $10,000 flexible budget, not 70% x 65%.
+      expect(spending(85)).toBeCloseTo(56500, 6)
+    })
+
+    it('uses the phase that started most recently, whatever order they are listed in', () => {
+      const spending = spendingByAge([...goSlowNo].reverse())
+      expect(spending(74)).toBeCloseTo(60000, 6)
+      expect(spending(84)).toBeCloseTo(57000, 6)
+      expect(spending(85)).toBeCloseTo(56500, 6)
+    })
+
+    it('returns to the earlier phase when a phase with an end date finishes', () => {
+      const spending = spendingByAge([phase('base', 65, 120), phase('trip', 75, 50, 80)])
+      expect(spending(79)).toBeCloseTo(55000, 6)
+      expect(spending(80)).toBeCloseTo(62000, 6)
+    })
+  })
+
   it('includes property costs and debt payments in spending', () => {
     const p = plan({
       people: [person(66, 65)],
