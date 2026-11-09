@@ -177,6 +177,17 @@ describe('runProposalJob', { timeout: 120_000 }, () => {
     }
   })
 
+  it('offers withdrawing the budget when a fixed rate is what falls short', async () => {
+    const fixedRate = plan(90_000, { drawdown: { strategy: { kind: 'initialPct', ratePct: 2 } } })
+    const update = await job(fixedRate)
+    const fix = update.proposals.find(x => x.group === 'free' && x.changes[0].kind === 'fundSpending')!
+    expect(fix.score.successRate!).toBeGreaterThan(update.base.successRate!)
+    expect(applyChanges(fixedRate, fix.changes, YEAR).drawdown.strategy).toEqual({ kind: 'expenses' })
+    // Already funding the budget: nothing to switch to.
+    const funded = await job(plan(90_000))
+    expect(funded.proposals.flatMap(x => x.changes).some(c => c.kind === 'fundSpending')).toBe(false)
+  })
+
   it('does not test withdrawal orders with only one kind of account', async () => {
     const p = plan(30_000, { accounts: [{ id: 'r', ownerId: 'a', type: 'RRSP', balance: 900_000 }] })
     const update = await job(p)

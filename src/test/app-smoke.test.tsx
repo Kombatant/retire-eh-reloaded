@@ -5,6 +5,7 @@ import { buildShareUrl } from '@/lib/share-link'
 import { createDefaultPlan } from '@/lib/plan/defaults'
 import { newIncome } from '@/lib/plan/edits'
 import { accountSchema } from '@/lib/plan/schema'
+import { AgeBucketTooltip } from '@/views/risk/FailureCards'
 
 // Recharts and the theme provider rely on browser APIs jsdom does not provide.
 beforeAll(() => {
@@ -75,6 +76,39 @@ describe('App smoke test', () => {
     expect(screen.queryByText(/Something went wrong/i)).toBeNull()
   }, 30_000)
 
+  it('explains how a failing plan fails and what would fix it', async () => {
+    const base = createDefaultPlan(new Date())
+    const plan = {
+      ...base,
+      expenses: { ...base.expenses, mode: 'detailed' as const, items: [{ id: 'budget', label: 'Budget', category: 'general', amount: 250_000, frequency: 'annual' as const, essential: true, indexed: true, realGrowthPct: 0 }] },
+      drawdown: { ...base.drawdown, strategy: { kind: 'expenses' as const } },
+    }
+    window.history.replaceState(null, '', '/#/risk/monte-carlo')
+    localStorage.setItem('retireEh.v2', JSON.stringify({ schemaVersion: 2, activePlanId: plan.id, plans: [plan] }))
+    render(<App />)
+    expect(await screen.findByText('How your plan fails', {}, { timeout: 20_000 })).toBeInTheDocument()
+    expect(screen.getByText('First falls short')).toBeInTheDocument()
+    expect(await screen.findByText('What needs to happen', {}, { timeout: 20_000 })).toBeInTheDocument()
+    expect(screen.queryByText(/Something went wrong/i)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'See all proposals' }))
+    expect(window.location.hash).toBe('#/proposals')
+  }, 40_000)
+
+  it('shows what the failing runs at an age had in common', () => {
+    const detail = { shortYears: 12, annualShortfall: 40_000, totalShortfall: 480_000, fundedShare: 0.6, earlyRealReturn: 0.012, savingsAtRetirement: 900_000, moneyLeft: 3 }
+    const { rerender } = render(<AgeBucketTooltip active unit="runs" failed={80} payload={[{ payload: { label: '70–74', runs: 10, detail } }]} />)
+    expect(screen.getByText('First short at age 70–74')).toBeInTheDocument()
+    expect(screen.getByText('10 failing runs · 13% of all failures')).toBeInTheDocument()
+    expect(screen.getByText('12 years')).toBeInTheDocument()
+    expect(screen.getByText('60%')).toBeInTheDocument()
+    expect(screen.getByText('7 of 10')).toBeInTheDocument()
+    expect(screen.getByText('1.2% after inflation')).toBeInTheDocument()
+    rerender(<AgeBucketTooltip active unit="start years" failed={80} payload={[{ payload: { label: '75–79', runs: 0, detail: null } }]} />)
+    expect(screen.getByText('No failing start years first fell short at these ages.')).toBeInTheDocument()
+    rerender(<AgeBucketTooltip unit="runs" failed={80} />)
+    expect(screen.queryByText(/First short/)).toBeNull()
+  })
+
   it('opens the page named in the URL hash', () => {
     window.history.replaceState(null, '', '/#/learn')
     render(<App />)
@@ -89,6 +123,16 @@ describe('App smoke test', () => {
     expect(screen.getByText('Savings by account through retirement')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('radio', { name: 'Table' }))
     expect(screen.getByRole('columnheader', { name: 'Left to spend after tax' })).toBeInTheDocument()
+    expect(screen.queryByText(/Something went wrong/i)).toBeNull()
+  })
+
+  it('compares retirement spending in dollars or as a share of savings', () => {
+    window.history.replaceState(null, '', '/#/projections/drawdown')
+    render(<App />)
+    expect(screen.getByText('Withdrawal rates')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('radio', { name: 'Dollars a year' }))
+    expect(screen.getByText('Spending more or less')).toBeInTheDocument()
+    expect(screen.getByText(/a year \(your plan/)).toBeInTheDocument()
     expect(screen.queryByText(/Something went wrong/i)).toBeNull()
   })
 

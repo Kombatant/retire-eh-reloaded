@@ -13,7 +13,7 @@ import { amortizeYear } from './steps/debts'
 import { solveIncreasing } from './steps/solver'
 import { LIF_EARLIEST_AGE, lifMaximumFactor, rrifMinimumFactor } from './steps/rrif'
 import { strategyWithdrawal, type StrategyState } from './steps/spendingStrategy'
-import type { CompiledFlow, CompiledPlan, DrawdownSnapshot, EstateResult, MarketPath, PersonYear, RsuAward, SimResult, YearRow } from './types'
+import type { CompiledAccount, CompiledFlow, CompiledPlan, DrawdownSnapshot, EstateResult, MarketPath, PersonYear, RsuAward, SimResult, YearRow } from './types'
 
 const DIVIDEND_GROSS_UP = 1 + TAX_2026.federal.eligibleDividendGrossUp
 const LIMITS = TAX_2026.limits
@@ -113,6 +113,18 @@ interface PlannedWithdrawal {
   gains: number[] // per person
 }
 
+// One account's return in year t. Accounts with an asset mix follow the
+// asset-class paths when the scenario has them; others follow the default
+// portfolio path, offset by their expected-return spread.
+export function accountReturnAt(c: CompiledPlan, a: CompiledAccount, path: MarketPath, t: number): number {
+  const mix = a.allocation
+  if (mix && path.assets) {
+    return mix.equity * path.assets.equity[t] + mix.bond * path.assets.bond[t] + mix.cash * path.assets.cash[t]
+  }
+  // A spread can otherwise push a bad year below a total loss.
+  return Math.max(-1, (path.nominalReturn[t] ?? 0) + (a.expectedReturnPct - c.expectedReturnPct) / 100)
+}
+
 // Year-by-year household simulation in nominal dollars.
 //
 // Conventions kept from the original engine:
@@ -204,9 +216,6 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
   const fhsaLifetime = c.people.map(p => p.fhsaLifetimeRoom)
   // Ownership changes when a spouse dies (rollover).
   const owner = c.accounts.map(a => a.ownerIndex)
-  // Each account's return differs from the path by its expected-return spread.
-  const spread = c.accounts.map(a => (a.expectedReturnPct - c.expectedReturnPct) / 100)
-
   // Stock portfolios: value and price per holding. Generic account operations
   // (withdrawals, contributions) change the account balance; holdings are
   // then rescaled in proportion, which is how a pro-rata sale works.
@@ -261,16 +270,7 @@ export function simulate(c: CompiledPlan, path: MarketPath): SimResult {
   for (let t = 0; t < years; t++) {
     const r = path.nominalReturn[t] ?? 0
     const k = cpi[t]
-    // Accounts with an asset mix follow the asset-class paths when the
-    // scenario has them; others follow the default portfolio path.
-    const accountReturn = c.accounts.map((a, i) => {
-      const mix = a.allocation
-      if (mix && path.assets) {
-        return mix.equity * path.assets.equity[t] + mix.bond * path.assets.bond[t] + mix.cash * path.assets.cash[t]
-      }
-      // A spread can otherwise push a bad year below a total loss.
-      return Math.max(-1, r + spread[i])
-    })
+    const accountReturn = c.accounts.map(a => accountReturnAt(c, a, path, t))
     const alive = c.people.map((_, i) => isAlive(i, t))
     const aliveIdx = alive.flatMap((a, i) => (a ? [i] : []))
 

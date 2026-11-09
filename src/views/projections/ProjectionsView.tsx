@@ -21,7 +21,7 @@ import { Badge, MoneyModeBadge } from '@/components/ui/Badge'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { Disclosure } from '@/components/ui/Disclosure'
 import { StockScenariosCard } from './StockScenariosCard'
-import { ContributionChart, DrawdownRatesChart } from './charts'
+import { ContributionChart, DrawdownRatesChart, SpendingLevelsChart } from './charts'
 import { AccountBalancesChart, IncomeSourcesChart, IncomeSourcesTable } from './breakdown'
 
 const TABS = ['growth', 'drawdown', 'benefits', 'stocks'] as const
@@ -146,6 +146,9 @@ function DrawdownPanel() {
   const startAge = data.length > 0 ? data[data.length - 1].age : projection.householdRetirementAge
   const [sourcesView, setSourcesView] = useState<'chart' | 'table'>('chart')
   const { compiledPlan, simulation } = projection
+  // A plan built from a dollar budget starts on dollars; one set as a share of
+  // salary starts on percentages.
+  const [withdrawalView, setWithdrawalView] = useState<'dollars' | 'rates'>(compiledPlan.expenseMode === 'detailed' ? 'dollars' : 'rates')
   const retired = useMemo(
     () => buildAccountBreakdown(compiledPlan, simulation, assumptions.showRealValues).filter(r => r.phase === 'drawdown'),
     [compiledPlan, simulation, assumptions.showRealValues],
@@ -185,16 +188,34 @@ function DrawdownPanel() {
         </>
       )}
       <Card>
-        <CardHeader title="Withdrawal rates" description="What different yearly withdrawals do to your savings over retirement." />
-        <DrawdownRatesChart
-          startBalance={getPortfolioAtRetirement(data)}
-          expectedReturn={assumptions.expectedReturn}
-          inflationRate={assumptions.inflationRate}
-          startAge={startAge}
-          showRealValues={assumptions.showRealValues}
-          plannedGifts={giftsAfterRetirement(assumptions.plannedGifts, projection.householdRetirementAge)}
-          minCurrentAge={projection.minCurrentAge}
+        <CardHeader
+          title={withdrawalView === 'dollars' ? 'Spending more or less' : 'Withdrawal rates'}
+          description={withdrawalView === 'dollars'
+            ? 'What different yearly spending does to your savings over retirement.'
+            : 'What different yearly withdrawals do to your savings over retirement.'}
+          actions={
+            <SegmentedControl
+              ariaLabel="Compare by"
+              size="sm"
+              value={withdrawalView}
+              onChange={setWithdrawalView}
+              options={[{ value: 'dollars', label: 'Dollars a year' }, { value: 'rates', label: '% of savings' }]}
+            />
+          }
         />
+        {withdrawalView === 'dollars'
+          ? <SpendingLevelsChart compiledPlan={compiledPlan} expectedReturn={assumptions.expectedReturn} showRealValues={assumptions.showRealValues} />
+          : (
+            <DrawdownRatesChart
+              startBalance={getPortfolioAtRetirement(data)}
+              expectedReturn={assumptions.expectedReturn}
+              inflationRate={assumptions.inflationRate}
+              startAge={startAge}
+              showRealValues={assumptions.showRealValues}
+              plannedGifts={giftsAfterRetirement(assumptions.plannedGifts, projection.householdRetirementAge)}
+              minCurrentAge={projection.minCurrentAge}
+            />
+          )}
       </Card>
       {estate && (
         <Card>

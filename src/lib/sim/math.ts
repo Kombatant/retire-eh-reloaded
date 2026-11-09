@@ -21,3 +21,12 @@ export function sum(values: ArrayLike<number>): number {
   for (let i = 0; i < values.length; i++) total += values[i]
   return total
 }
+
+// Linear interpolation between the two nearest values of an ascending array.
+export function quantile(sorted: ArrayLike<number>, q: number): number {
+  if (sorted.length === 0) return 0
+  const pos = (sorted.length - 1) * q
+  const lo = Math.floor(pos)
+  const hi = Math.ceil(pos)
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo)
+}

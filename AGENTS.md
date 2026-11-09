@@ -33,8 +33,9 @@ The application is 100% pure TypeScript (React + Vite). All calculations run cli
   - Return inputs are long-run compounded rates. `monteCarloPath` converts them to arithmetic means with `arithmeticFromCompounded`, so a typical run compounds at the rate entered.
   - The Risk tab runs them in a Web Worker (`src/workers/sim.worker.ts`) through `useRiskAnalysis`.
   - Results stream in batches and are cached by plan.
+  - `failures.ts` keeps a small record per run (`analyzeRun`) and turns it into a `FailureSummary`: when the failing runs first fall short, for how long, by how much, why money was left over if it was, and how their markets differed from the funded runs. Only Risk asks for records (`acc.records`), so Proposals doesn't pay for them. `src/lib/insights/failureExplanation.ts` turns the summary into words and picks the fixes shown on the Risk page from the Proposals job.
   - In tests, where jsdom has no Worker, a small sample runs synchronously instead.
-- **Insights** (`src/lib/insights/`): Sankey data, CSV export, FI and Coast FI, milestones, plan comparison, tax-bracket position and the per-year account breakdown (balances and withdrawals by account category, `accountBreakdown.ts`). Each is a pure, tested helper.
+- **Insights** (`src/lib/insights/`): Sankey data, CSV export, FI and Coast FI, milestones, plan comparison, tax-bracket position, the per-year account breakdown (balances and withdrawals by account category, `accountBreakdown.ts`) and spending levels (savings at yearly amounts around the plan's spending, each a full `simulate` run with withdrawals following spending, `spendingLevels.ts`). Each is a pure, tested helper.
 - **Proposals** (`src/lib/insights/proposals.ts`): each candidate is a serializable `Change`, applied with `applyChanges` and scored by re-running `simulate` and Monte Carlo on the same seeds as the baseline. A change is shown only if it beats the plan by a meaningful margin (`isImprovement`).
   - The page runs `runProposalJob` in its own Web Worker (`src/workers/proposals.worker.ts`) through `useProposals`.
   - Add a new lever by adding a `Change` kind, its `applyChange` and `describeChange` cases, and a candidate list.
@@ -76,10 +77,10 @@ A grouped sidebar (a drawer on small screens) with hash routes. Each page shows 
 |-------|------|-------|----------|
 | — | Plan | `#/plan/<section>` | Inputs, one section at a time: household, savings, income, spending, property, withdrawals, assumptions. A live results rail sits beside them (a bottom bar on small screens). Default page. |
 | Results | Dashboard | `#/dashboard` | Status and goal progress, 4 KPIs, lifetime savings chart, income sources, milestones, plan summary |
-| | Projections | `#/projections/<growth\|drawdown\|benefits\|stocks>` | Saving years (savings by account), retirement years (where the money comes from each year, savings by account, withdrawal rates, estate), CPP/OAS timing, stock scenarios (Advanced) |
+| | Projections | `#/projections/<growth\|drawdown\|benefits\|stocks>` | Saving years (savings by account), retirement years (where the money comes from each year, savings by account, spending in dollars or withdrawal rates, estate), CPP/OAS timing, stock scenarios (Advanced) |
 | | Cash flow | `#/cashflow/<flow\|table>` | Yearly Sankey, year-by-year table with column presets and CSV export |
 | | Taxes | `#/taxes/<retirement\|by-year\|brackets>` | Tax at retirement, tax by year, bracket room |
-| | Risk | `#/risk/<monte-carlo\|historical\|stress>` | Success KPIs; fan chart, historical backtest, stress tests |
+| | Risk | `#/risk/<monte-carlo\|historical\|stress>` | Success KPIs; fan chart, historical backtest, stress tests; how the failing runs fail and what would fix them |
 | | Proposals | `#/proposals` | When it's safest to retire, with a slider to try other ages; changes tested against the current plan: best combination, free changes, trade-offs or room to spare; try as a new plan or apply with undo |
 | Tools | Compare | `#/compare` | 2–3 saved plans side by side |
 | | Tracking | `#/tracking` | Dated balance snapshots, actual vs. projected, rebaseline |
@@ -141,9 +142,10 @@ Provider order in `App.tsx`: ThemeProvider › ToastProvider › RouteProvider �
 - `sim-parity`: the unified engine with v1 rules matches the original engine within $1. `engine`, `retirement-cash-flow`, `tax`, `cpp`, `oas*` cover the original modules.
 - `tax-provinces`: hand-computed golden tax values, every jurisdiction, payroll, splitting, OAS/GIS/CPP.
 - `sim-v2`, `sim-accounts`, `sim-spending`, `sim-drawdown`: engine behaviour (tax ownership, refunds, account types, room, income streams, budgets, real estate, RRIF/LIF, strategies, survivors, estate).
-- `sim-risk`, `rng`: Monte Carlo, backtest, crash scenarios.
+- `sim-risk`, `rng`: Monte Carlo, backtest, crash scenarios, how failing runs fail.
 - `audit-regressions`: scenarios the engine once got wrong (funding verdicts, one-time costs, annual returns, pension eligibility, payroll, LIF jurisdiction, room limits, past events, storage recovery, plan diagnostics).
 - `insights`, `outlook`: Sankey, CSV, FI metrics, milestones, comparison, brackets; goal outlook, income sources, money-lasts.
+- `spending-levels`: the yearly amounts compared, that a level matches changing the budget, and the most a plan can spend.
 - `proposals`: applying changes, which proposals are offered, and that a proposal's numbers match applying it.
 - `retirement-timing`: the range of ages tested, the earliest safe age, and that a tested age's numbers match applying it.
 - `cpp-history`: CPP/QPP estimate from work history.

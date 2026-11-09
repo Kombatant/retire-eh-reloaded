@@ -4,7 +4,9 @@ import {
 } from 'recharts'
 import type { ProjectionDataPoint } from '@/types/household'
 import type { PlannedGiftLite } from '@/lib/calculations'
+import type { CompiledPlan } from '@/lib/sim/types'
 import { buildContributionGrowth } from '@/lib/contributionGrowth'
+import { buildSpendingLevels, type SpendingLevel } from '@/lib/insights/spendingLevels'
 import { money, moneyCompact } from '@/lib/formatting'
 import { axisProps, chartColors, gridProps, sequentialColors, tooltipProps } from '@/lib/ui/chartTheme'
 import { ChartLegend } from '@/components/ui/ChartLegend'
@@ -47,6 +49,68 @@ export function ContributionChart({ data, annualContribution, showRealValues, in
           </ComposedChart>
         </ResponsiveContainer>
       </div>
+    </>
+  )
+}
+
+// What spending more or less each year does to savings over retirement.
+export function SpendingLevelsChart({ compiledPlan, expectedReturn, showRealValues }: {
+  compiledPlan: CompiledPlan
+  expectedReturn: number
+  showRealValues: boolean
+}) {
+  const result = useMemo(
+    () => buildSpendingLevels(compiledPlan, expectedReturn, showRealValues),
+    [compiledPlan, expectedReturn, showRealValues],
+  )
+  if (!result) return <p className="text-sm text-fg-muted">Add retirement spending to compare yearly amounts.</p>
+
+  const { ages, levels, highestSustainable: highest } = result
+  const lastAge = ages[ages.length - 1]
+  const labelFor = (level: SpendingLevel) => {
+    const notes = [level.isPlan && 'your plan', level.runsOutAtAge !== null && `runs out at ${level.runsOutAtAge}`].filter(Boolean)
+    return `${moneyCompact(level.spending)} a year${notes.length > 0 ? ` (${notes.join(', ')})` : ''}`
+  }
+  const highestLabel = highest ? `Most that lasts to ${lastAge} (${moneyCompact(highest.spending)} a year)` : ''
+  const data = ages.map((age, i) => {
+    const row: Record<string, number> = { age }
+    levels.forEach((level, l) => { row[`level${l}`] = level.balances[i] })
+    if (highest) row.highest = highest.balances[i]
+    return row
+  })
+  const isBudget = compiledPlan.expenseMode === 'detailed'
+
+  return (
+    <>
+      <ChartLegend
+        className="mb-3"
+        items={[
+          ...levels.map((level, l) => ({ label: labelFor(level), color: sequentialColors[l], shape: 'line' as const })),
+          ...(highest ? [{ label: highestLabel, color: chartColors.total, shape: 'dashed' as const }] : []),
+        ]}
+      />
+      <div className="h-80">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+            <CartesianGrid {...gridProps} />
+            <XAxis dataKey="age" {...axisProps} minTickGap={24} />
+            <YAxis {...yAxis} />
+            <Tooltip {...tooltipProps} labelFormatter={ageLabel} formatter={moneyFormatter} />
+            <ReferenceLine y={0} stroke={chartColors.grid} />
+            {levels.map((level, l) => (
+              <Line key={level.spending} dataKey={`level${l}`} name={labelFor(level)} stroke={sequentialColors[l]} strokeWidth={level.isPlan ? 3 : 2} dot={false} isAnimationActive={false} />
+            ))}
+            {highest && (
+              <Line dataKey="highest" name={highestLabel} stroke={chartColors.total} strokeWidth={1.5} strokeDasharray="5 4" dot={false} isAnimationActive={false} />
+            )}
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+      <p className="mt-3 text-xs text-fg-muted">
+        Each line spends that amount every year of retirement ({isBudget ? 'after tax' : 'as income before tax'}, in today's dollars, rising with inflation),
+        with CPP, OAS and pensions covering their share and savings the rest, at a steady {expectedReturn}% return before inflation.
+        {compiledPlan.strategy !== 'expenses' && ' Your plan sets withdrawals by a rule (Plan › Withdrawals); these lines withdraw what each amount needs instead, so they can differ from the other charts.'}
+      </p>
     </>
   )
 }

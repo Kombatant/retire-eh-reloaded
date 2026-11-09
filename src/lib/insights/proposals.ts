@@ -15,7 +15,7 @@ import { money } from '@/lib/formatting'
 export const TARGET_SUCCESS = 0.9
 // Every run of a proposal uses the same simulated markets as the baseline, but
 // differences smaller than this are still too small to act on.
-const MIN_SUCCESS_GAIN = 0.01
+export const MIN_SUCCESS_GAIN = 0.01
 const MAX_SUCCESS_LOSS = 0.01
 const MIN_MONEY_GAIN = 10_000
 const MIN_RELATIVE_GAIN = 0.01
@@ -29,6 +29,8 @@ export type Change =
   | { kind: 'meltdown'; enabled: boolean; targetTaxableIncome: number }
   | { kind: 'benefitStart'; cppAge: number; oasAge: number }
   | { kind: 'rrifConversion'; age: number }
+  // Withdraw what the budget needs instead of a fixed rate.
+  | { kind: 'fundSpending' }
   // Positive is later, negative earlier.
   | { kind: 'retirementShift'; years: number }
   // Percent change in recurring spending; negative is less.
@@ -91,6 +93,8 @@ function applyChange(plan: PlanV2, change: Change, nowYear: number): PlanV2 {
       return { ...plan, drawdown: { ...plan.drawdown, meltdown: { enabled: change.enabled, targetTaxableIncome: change.targetTaxableIncome } } }
     case 'rrifConversion':
       return { ...plan, drawdown: { ...plan.drawdown, rrifConversionAge: change.age } }
+    case 'fundSpending':
+      return { ...plan, drawdown: { ...plan.drawdown, strategy: { kind: 'expenses' } } }
     case 'benefitStart':
       return {
         ...plan,
@@ -180,6 +184,8 @@ export function describeChange(change: Change): { title: string; detail: string 
         : { title: 'Turn off the RRSP meltdown', detail: 'Withdraw from RRSP/RRIF only what your strategy needs and what the rules require.' }
     case 'benefitStart':
       return { title: `Start CPP at ${change.cppAge} and OAS at ${change.oasAge}`, detail: 'Applied to everyone in the plan who has not started these benefits yet.' }
+    case 'fundSpending':
+      return { title: 'Withdraw what your budget needs', detail: 'Use the “Fund my spending” strategy: each year’s withdrawal is set by your budget and tax instead of a fixed rate.' }
     case 'rrifConversion':
       return { title: `Convert your RRSP to a RRIF at ${change.age}`, detail: 'Minimum withdrawals start at that age, and RRIF income qualifies for the pension credit and pension splitting from 65.' }
     case 'retirementShift': {
@@ -272,6 +278,11 @@ function rrifChanges(plan: PlanV2, nowYear: number): Change[] {
   return RRIF_AGES
     .filter(age => age !== plan.drawdown.rrifConversionAge && youngest < age)
     .map(age => ({ kind: 'rrifConversion', age }))
+}
+
+// A fixed rate can take less than the budget needs even with money left over.
+function strategyChanges(plan: PlanV2): Change[] {
+  return plan.expenses.mode === 'detailed' && plan.drawdown.strategy.kind === 'initialPct' ? [{ kind: 'fundSpending' }] : []
 }
 
 function savingTarget(plan: PlanV2) {
@@ -378,7 +389,7 @@ export async function runProposalJob(
   const focusOnSuccess = (base.successRate !== null && base.successRate < TARGET_SUCCESS) || !base.onTrack
   const proposals: Proposal[] = []
 
-  const free = [orderChanges(plan), meltdownChanges(plan), benefitChanges(plan, startYear), rrifChanges(plan, startYear)]
+  const free = [orderChanges(plan), meltdownChanges(plan), benefitChanges(plan, startYear), rrifChanges(plan, startYear), strategyChanges(plan)]
   const savings = savingTarget(plan)
   const canShiftRetirement = plan.people.some(p => personAge(p.birthYear, startYear) < p.retirementAge)
   const homeLevers = focusOnSuccess ? homeSaleLevers(plan, startYear) : []

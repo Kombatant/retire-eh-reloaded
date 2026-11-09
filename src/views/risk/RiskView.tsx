@@ -9,7 +9,10 @@ import { patchSimulation } from '@/lib/plan/edits'
 import { scenarioGrowthPct, type PlanV2 } from '@/lib/plan/schema'
 import { HISTORICAL_RANGE, HISTORICAL_SOURCE } from '@/lib/sim/paths/historical'
 import { arithmeticFromCompounded } from '@/lib/sim/paths/monteCarlo'
-import { successDescription, successIsMeaningful } from '@/lib/sim/risk'
+import { runSucceeded, successDescription, successIsMeaningful } from '@/lib/sim/risk'
+import type { FailureSummary } from '@/lib/sim/failures'
+import { shortfallSubject } from '@/lib/insights/failureExplanation'
+import { TARGET_SUCCESS } from '@/lib/insights/proposals'
 import { householdBaseAge } from '@/lib/sim'
 import { money, moneyCompact } from '@/lib/formatting'
 import { axisProps, barTooltipProps, chartColors, gridProps, sequentialColors, tooltipProps } from '@/lib/ui/chartTheme'
@@ -28,6 +31,8 @@ import { Checkbox } from '@/components/ui/Checkbox'
 import { Button } from '@/components/ui/Button'
 import { ChartLegend } from '@/components/ui/ChartLegend'
 import { Advanced } from '@/components/ui/Advanced'
+import { pct as percent, TARGET_PCT } from '@/views/proposals/format'
+import { FailureAnalysisCard, WhatNeedsToHappenCard } from './FailureCards'
 
 const TABS = ['monte-carlo', 'historical', 'stress'] as const
 
@@ -96,9 +101,20 @@ export function RiskView() {
         ]}
       >
         {risk.error && <Callout tone="danger" title="Risk analysis failed" className="mb-4">{risk.error}</Callout>}
-        {tab === 'monte-carlo' && <MonteCarloCard />}
-        {tab === 'historical' && <HistoricalCard />}
-        {tab === 'stress' && <StressCard />}
+        <div className="space-y-4">
+          {tab === 'monte-carlo' && <MonteCarloCard />}
+          {tab === 'monte-carlo' && mc?.failures && <FailureDetails failures={mc.failures} unit="runs" />}
+          {tab === 'historical' && <HistoricalCard />}
+          {tab === 'historical' && backtest?.failures && <FailureDetails failures={backtest.failures} unit="start years" />}
+          {tab === 'stress' && <StressCard />}
+          {testable && mc && !risk.running && mc.successes < mc.runs && (mc.successRate < TARGET_SUCCESS
+            ? <WhatNeedsToHappenCard successRate={mc.successRate} />
+            : (
+              <Callout title="No change needed">
+                At {percent(mc.successRate)}, your plan is past the {TARGET_PCT}% target, so the runs that fell short don't call for a change today. If markets do turn out that weak, spending less for a few years is the usual response.
+              </Callout>
+            ))}
+        </div>
       </SubTabs>
 
       <p className="mt-6 text-xs text-fg-muted">
@@ -106,6 +122,20 @@ export function RiskView() {
         Historical data: {HISTORICAL_SOURCE} Past returns do not predict future returns.
       </p>
     </>
+  )
+}
+
+function FailureDetails({ failures, unit }: { failures: FailureSummary; unit: string }) {
+  const { activePlan } = usePlanStore()
+  const { compiledPlan, simulation } = useProjectionContext()
+  return (
+    <FailureAnalysisCard
+      failures={failures}
+      unit={unit}
+      subject={shortfallSubject(compiledPlan)}
+      averageMarketsFail={!runSucceeded(simulation)}
+      youngestLabel={activePlan.people.length > 1}
+    />
   )
 }
 

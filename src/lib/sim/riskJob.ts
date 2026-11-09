@@ -1,5 +1,6 @@
 import type { PlanV2 } from '@/lib/plan/schema'
 import { compilePlan } from './compile'
+import type { RunRecord } from './failures'
 import {
   runBacktest,
   runCrashScenarios,
@@ -37,7 +38,7 @@ export async function runRiskJob(
   const c = compilePlan(plan, { startYear })
   const settings = settingsFromPlan(plan)
   const runs = Math.min(settings.runs, opts.maxRuns ?? Infinity)
-  const acc = { portfolios: [] as Float64Array[], estates: [] as number[], successes: 0 }
+  const acc = { portfolios: [] as Float64Array[], estates: [] as number[], successes: 0, records: [] as RunRecord[] }
   for (let from = 0; from < runs; from += RISK_BATCH) {
     if (opts.shouldStop?.()) return
     runMonteCarloBatch(c, settings, settings.seed, from, Math.min(RISK_BATCH, runs - from), acc)
@@ -45,7 +46,7 @@ export async function runRiskJob(
     onUpdate({
       backtest,
       crashes,
-      monteCarlo: summarizeRuns(c, acc.portfolios, acc.successes, acc.estates),
+      monteCarlo: summarizeRuns(c, acc.portfolios, acc.successes, acc.estates, acc.records),
       progress: Math.min(1, (from + RISK_BATCH) / runs),
       done,
     })
