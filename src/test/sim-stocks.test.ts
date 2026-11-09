@@ -46,6 +46,14 @@ describe('stock holdings', () => {
     expect(value('base')).toBeLessThan(value('bull'))
   })
 
+  it('uses the custom rate, and the base rate until one is entered', () => {
+    const firstYear = (growthPct: object) =>
+      simulatePlan(plan({ holdings: [holding({ growthPct })] }, { assumptions: { stockScenario: 'custom' } }, 40, 65), flat).result.rows[0].stockValue
+    expect(firstYear({ base: 10, custom: 30 })).toBeCloseTo(6500, 6)
+    expect(firstYear({ base: 10, custom: 0 })).toBeCloseTo(5000, 6)
+    expect(firstYear({ base: 10 })).toBeCloseTo(5500, 6)
+  })
+
   it('taxes reinvested dividends each year', () => {
     const p = plan({ holdings: [holding({ dividendYieldPct: 4, growthPct: { base: 0 } })] }, {}, 40, 65)
     const row = simulatePlan(p, flat).result.rows[0]
@@ -267,6 +275,11 @@ describe('stock scenarios and market paths', () => {
     expect(rows[0].withPlan.stockAtEnd).toBeLessThan(rows[2].withPlan.stockAtEnd)
     expect(rows[1].withPlan.totalSales).toBeGreaterThan(rows[1].noSales.totalSales)
     expect(rows[1].noSales.totalSales).toBeGreaterThanOrEqual(0)
+  })
+
+  it('adds the custom case to the comparison only when the plan uses it', () => {
+    const p = plan({ holdings: [holding({ shares: 10000 })] }, { assumptions: { stockScenario: 'custom' } })
+    expect(compareStockScenarios(p, YEAR).map(r => r.scenario)).toEqual(['bear', 'base', 'bull', 'custom'])
   })
 
   it('gives each holding its own Monte Carlo, historical and crash path', () => {

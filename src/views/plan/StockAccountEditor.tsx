@@ -4,7 +4,7 @@ import { usePlanStore } from '@/contexts/PlanStoreContext'
 import { useStockQuotes } from '@/hooks/useStockQuotes'
 import { addHolding, patchHolding, removeHolding, setStockSalePlan, setStockScenario, setUsdCad } from '@/lib/plan/edits'
 import { newId } from '@/lib/plan/ids'
-import { DEFAULT_USD_CAD, STOCK_SCENARIOS, type AccountV2, type Holding, type RsuGrant, type StockScenario } from '@/lib/plan/schema'
+import { DEFAULT_USD_CAD, STOCK_SCENARIOS, scenarioGrowthPct, type AccountV2, type Holding, type RsuGrant, type StockScenario } from '@/lib/plan/schema'
 import { QUOTE_PROVIDERS, isStale, type QuoteProvider } from '@/lib/market/quotes'
 import { formatMoney } from '@/lib/formatting'
 import { NumberInput } from '@/components/ui/NumberInput'
@@ -19,7 +19,9 @@ type StockAccount = Extract<AccountV2, { type: 'STOCK' }>
 
 const labelClass = `${sharedLabelClass} mb-1.5`
 const inputClass = `${controlBase} ${controlSize.md}`
-const SCENARIO_LABELS: Record<StockScenario, string> = { bear: 'Bear', base: 'Base', bull: 'Bull' }
+const SCENARIO_LABELS: Record<StockScenario, string> = { bear: 'Bear', base: 'Base', bull: 'Bull', custom: 'Custom' }
+// Matches the limits in holdingSchema.
+const scenarioMaxPct = (sc: StockScenario) => (sc === 'bull' || sc === 'custom' ? 100 : 50)
 
 // Shares, percentages and other plain numbers; decimals are allowed.
 function numberField(value: number, onChange: (v: number) => void, props: { min?: number; max?: number; label: string }) {
@@ -219,20 +221,6 @@ function HoldingRow({ account, holding }: { account: StockAccount; holding: Hold
               {numberField(holding.volatilityPct, v => update({ volatilityPct: Math.max(0, v) }), { min: 0, max: 150, label: 'Volatility' })}
             </label>
           </div>
-          <div>
-            <span className={labelClass}>
-              Price projection: yearly growth % (excluding dividends)
-              <InfoTooltip text="Your view of how the share price might grow each year in a bad, expected and good case. The case used in projections is chosen for the whole account." />
-            </span>
-            <div className="grid grid-cols-3 gap-2">
-              {STOCK_SCENARIOS.map(sc => (
-                <label key={sc} className="flex items-center gap-1.5 text-xs text-fg-secondary">
-                  <span className="w-9">{SCENARIO_LABELS[sc]}</span>
-                  {numberField(holding.growthPct[sc], v => update({ growthPct: { ...holding.growthPct, [sc]: v } }), { min: -50, max: sc === 'bull' ? 100 : 50, label: `${SCENARIO_LABELS[sc]} growth` })}
-                </label>
-              ))}
-            </div>
-          </div>
           <label className="flex items-center gap-2 text-xs text-fg-secondary">
             <input
               type="checkbox"
@@ -310,6 +298,71 @@ function MarketDataSettingsPanel() {
   )
 }
 
+// Every stock's growth rate in every case, with the case picker as the column
+// header, so the numbers behind each case are visible where it is chosen.
+function PriceCaseTable({ account, scenario }: { account: StockAccount; scenario: StockScenario }) {
+  const { updateActivePlan } = usePlanStore()
+  return (
+    <div>
+      <div className={labelClass}>
+        Price case for projections
+        <InfoTooltip text="Your view of how each share price might grow per year, excluding dividends: a bad, expected and good case, plus a custom rate of your own (the base rate until you enter one). The highlighted case is used across the whole plan." />
+      </div>
+      <div className="overflow-x-auto rounded-lg border border-border">
+        <table className="w-full table-fixed border-collapse text-[13px]">
+          <colgroup>
+            <col />
+            {STOCK_SCENARIOS.map(sc => <col key={sc} className="w-[17%]" />)}
+          </colgroup>
+          <thead>
+            <tr>
+              <th scope="col" className="px-3 py-1.5 text-left text-xs font-medium text-fg-muted">Yearly growth %</th>
+              <th scope="colgroup" colSpan={STOCK_SCENARIOS.length} className="px-1.5 py-1.5 font-normal">
+                <SegmentedControl
+                  ariaLabel="Price case"
+                  size="sm"
+                  fill
+                  value={scenario}
+                  onChange={(sc) => updateActivePlan(p => setStockScenario(p, sc))}
+                  options={STOCK_SCENARIOS.map(sc => ({ value: sc, label: SCENARIO_LABELS[sc] }))}
+                />
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {account.holdings.map(h => {
+              const name = h.symbol.trim() || 'Unnamed stock'
+              return (
+                <tr key={h.id} className="border-t border-border">
+                  <th scope="row" className="truncate px-3 py-1.5 text-left font-medium text-fg">{name}</th>
+                  {STOCK_SCENARIOS.map(sc => (
+                    <td key={sc} className={`px-1.5 py-1.5 ${sc === scenario ? 'bg-accent-subtle' : ''}`}>
+                      <DecimalInput
+                        size="sm"
+                        className="[&_input]:px-1 [&_input]:text-center"
+                        value={scenarioGrowthPct(h.growthPct, sc)}
+                        min={-50}
+                        max={scenarioMaxPct(sc)}
+                        onChange={(v) => updateActivePlan(p => patchHolding(p, account.id, h.id, { growthPct: { ...h.growthPct, [sc]: v } }))}
+                        ariaLabel={`${name} ${SCENARIO_LABELS[sc]} growth`}
+                      />
+                    </td>
+                  ))}
+                </tr>
+              )
+            })}
+            {account.holdings.length === 0 && (
+              <tr className="border-t border-border">
+                <td colSpan={STOCK_SCENARIOS.length + 1} className="px-3 py-2 text-xs text-fg-muted">Add a stock to set its growth rates.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 export function StockAccountEditor({ account }: { account: StockAccount }) {
   const { activePlan, updateActivePlan, nowYear } = usePlanStore()
   const quotes = useStockQuotes()
@@ -368,20 +421,11 @@ export function StockAccountEditor({ account }: { account: StockAccount }) {
         + Add stock
       </button>
 
+      <div className="border-t border-border pt-3">
+        <PriceCaseTable account={account} scenario={scenario} />
+      </div>
+
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 border-t border-border pt-2">
-        <label>
-          <span className={labelClass}>
-            Price case for projections
-            <InfoTooltip text="Which of each stock's bear, base or bull growth rates the projections use. The Projections tab compares all three." />
-          </span>
-          <SegmentedControl
-            ariaLabel="Price case"
-            size="sm"
-            value={scenario}
-            onChange={(sc) => updateActivePlan(p => setStockScenario(p, sc))}
-            options={STOCK_SCENARIOS.map(sc => ({ value: sc, label: SCENARIO_LABELS[sc] }))}
-          />
-        </label>
         <label>
           <span className={labelClass}>
             Sell plan

@@ -55,7 +55,9 @@ export function compareStockScenarios(plan: PlanV2, startYear: number): StockSce
     ...plan,
     accounts: plan.accounts.map(a => (a.type === 'STOCK' ? { ...a, salePlan: { kind: 'none' as const } } : a)),
   }
-  return STOCK_SCENARIOS.map(scenario => {
+  // Custom is only worth a row when it's the case the plan is actually using.
+  const cases = STOCK_SCENARIOS.filter(s => s !== 'custom' || plan.assumptions.stockScenario === 'custom')
+  return cases.map(scenario => {
     const pick = (p: PlanV2): PlanV2 => ({ ...p, assumptions: { ...p.assumptions, stockScenario: scenario } })
     return {
       scenario,

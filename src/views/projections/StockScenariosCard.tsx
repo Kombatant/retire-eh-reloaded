@@ -4,7 +4,7 @@ import { usePlanStore } from '@/contexts/PlanStoreContext'
 import { compareStockScenarios, hasSalePlan, hasStock, type StockOutcome } from '@/lib/insights/stockScenarios'
 import { formatMoney } from '@/lib/formatting'
 
-const LABELS = { bear: 'Bear', base: 'Base', bull: 'Bull' } as const
+const LABELS = { bear: 'Bear', base: 'Base', bull: 'Bull', custom: 'Custom' } as const
 
 function Funded({ outcome }: { outcome: StockOutcome }) {
   return outcome.success
@@ -36,7 +36,7 @@ export function StockScenariosCard() {
     <div className="rounded-xl border border-border bg-surface p-4 shadow-[0_1px_2px_rgba(16,24,40,0.04)] sm:p-5">
       <h2 className="text-[15px] font-semibold text-fg">Stock price scenarios</h2>
       <p className="mt-0.5 mb-4 text-[13px] text-fg-muted">
-        Each stock's bear, base and bull growth{selling ? ', with your sell plan and with no planned sales' : ''}. Today's dollars, average markets for everything else.
+        Each stock's {selected === 'custom' ? 'bear, base, bull and custom' : 'bear, base and bull'} growth{selling ? ', with your sell plan and with no planned sales' : ''}. Today's dollars, average markets for everything else.
         Projections elsewhere use the <strong>{LABELS[selected].toLowerCase()}</strong> case.
       </p>
       <div className="overflow-x-auto rounded-lg border border-border">

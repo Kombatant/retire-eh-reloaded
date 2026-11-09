@@ -165,7 +165,7 @@ Provider order in `App.tsx`: ThemeProvider › ToastProvider › RouteProvider �
   - USD→CAD conversion uses the Bank of Canada Valet API.
   - The key is stored in localStorage (`retireEh.marketData`) and never in the plan, so it isn't exported or shared.
   - `useAutoRefreshQuotes` (in App) refreshes stale prices once a day.
-- Stock portfolio accounts (`type: 'STOCK'`): holdings with vested shares, unvested RSU tranches, ESPP, a bear/base/bull price projection, and a sell plan.
+- Stock portfolio accounts (`type: 'STOCK'`): holdings with vested shares, unvested RSU tranches, ESPP, a bear/base/bull/custom price projection (custom follows base until set), and a sell plan.
   - The share price (`priceUsd`) is always in USD, converted at the plan's `assumptions.usdCad.rate` (Bank of Canada, held constant in projections). Every other amount, including the cost per share, is CAD. Older plans that stored a CAD `price` are converted in `parsePlanData`.
   - Vesting and the ESPP benefit are taxed as employment income. With `sellToCover` (default on), the extra tax and payroll a vest causes are paid by selling the new shares at vest (no gain); the row reports it as `stockTaxWithheld`, and it is still part of `tax`.
   - `src/lib/insights/stockScenarios.ts` compares the three cases with and without the sell plan.

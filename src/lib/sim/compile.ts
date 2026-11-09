@@ -1,3 +1,4 @@
+import { scenarioGrowthPct } from '@/lib/plan/schema'
 import type { AccountV2, ExpenseItem, GrowthRule, IncomeStream, PlanV2, TimePoint } from '@/lib/plan/schema'
 import { TAX_2026 } from '@/lib/tax/data/2026'
 import { resolveYear } from '@/lib/plan/time'
@@ -144,7 +145,7 @@ export function compilePlan(plan: PlanV2, { startYear, rules = 'v2' }: CompileOp
       shares: h.shares,
       price: h.priceUsd * usdCad,
       acb: h.shares * (h.costPerShare ?? h.priceUsd * usdCad),
-      growth: h.growthPct[scenario] / 100,
+      growth: scenarioGrowthPct(h.growthPct, scenario) / 100,
       dividendYield: h.dividendYieldPct / 100,
       dividendEligible: h.dividendType === 'eligible',
       volatility: h.volatilityPct / 100,

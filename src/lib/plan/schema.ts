@@ -127,7 +127,7 @@ const rrifConversionAge = z.number().int().min(RRIF_EARLIEST_CONVERSION_AGE).max
 
 // --- Individual stock holdings (stock portfolio account) ---------------------
 
-export const STOCK_SCENARIOS = ['bear', 'base', 'bull'] as const
+export const STOCK_SCENARIOS = ['bear', 'base', 'bull', 'custom'] as const
 
 // Fallback USD→CAD rate until the Bank of Canada rate is fetched.
 export const DEFAULT_USD_CAD = 1.38
@@ -171,6 +171,8 @@ export const holdingSchema = z.object({
     bear: percent(-50, 50).default(0),
     base: percent(-50, 50).default(5),
     bull: percent(-50, 100).default(10),
+    // Optional so existing plans load unchanged; see scenarioGrowthPct.
+    custom: percent(-50, 100).optional(),
   }).prefault({}),
   // Annual standard deviation for Monte Carlo; single stocks are volatile.
   volatilityPct: percent(0, 150).default(30),
@@ -190,6 +192,12 @@ export const holdingSchema = z.object({
   }).optional(),
 })
 export type Holding = z.infer<typeof holdingSchema>
+
+// A holding's yearly price growth for a case. Until a custom rate is entered,
+// Custom follows Base, so choosing it never jumps to an arbitrary number.
+export function scenarioGrowthPct(growth: Holding['growthPct'], scenario: StockScenario): number {
+  return growth[scenario] ?? growth.base
+}
 
 // Selling stock every year to fund retirement.
 export const stockSalePlanSchema = z.discriminatedUnion('kind', [
