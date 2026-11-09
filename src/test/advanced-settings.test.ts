@@ -24,6 +24,17 @@ describe('advancedSettingsInUse', () => {
     expect(advancedSettingsInUse(plan).map(s => s.label)).toContain('RRSP meltdown')
   })
 
+  it('reports the reinvested money mix only when the plan creates that account', () => {
+    const label = 'Investment mix for reinvested money'
+    const base = createDefaultPlan(NOW)
+    const withoutNonReg = { ...base, accounts: base.accounts.filter(a => a.type !== 'NONREG') }
+    const plan = patchDrawdown(withoutNonReg, { reinvestGrowth: { returnOverridePct: 5 } })
+    expect(advancedSettingsInUse(plan).map(s => s.label)).toContain(label)
+
+    const withNonReg = addAccount(plan, base.people[0].id, 'NONREG', 'n')
+    expect(advancedSettingsInUse(withNonReg).map(s => s.label)).not.toContain(label)
+  })
+
   it('names the person when the plan is for a couple', () => {
     let plan = addPerson(createDefaultPlan(NOW), NOW, 'p2')
     plan = patchPerson(plan, 'p2', { room: { rrsp: 0, tfsa: 0 } })

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { planSchema, type PlanV2, type PlanV2Input } from '@/lib/plan/schema'
 import { simulate, simulatePlan } from '@/lib/sim'
+import { compilePlan } from '@/lib/sim/compile'
 import { lifMaximumFactor, rrifMinimumFactor } from '@/lib/sim/steps/rrif'
 import { probateFee } from '@/lib/tax/probate'
 
@@ -110,6 +111,58 @@ describe('withdrawal order and meltdown', () => {
     expect(row.people[0].taxableIncome).toBeCloseTo(60000, 0)
     expect(row.meltdownWithdrawals).toBeGreaterThan(20000)
     expect(row.reinvested).toBeGreaterThan(10000)
+  })
+
+  describe('growth of the account the plan creates for reinvested money', () => {
+    const meltdownPlan = (extra: Partial<PlanV2Input['drawdown']> = {}, accounts: PlanV2Input['accounts'] = []) => plan({
+      people: [person('a', 60, 60, { cpp: { mode: 'amount', amountAt65: 0 } })],
+      accounts: [
+        { id: 'r', ownerId: 'a', type: 'RRSP', balance: 800000 },
+        { id: 't', ownerId: 'a', type: 'TFSA', balance: 400000 },
+        ...(accounts ?? []),
+      ],
+      drawdown: { meltdown: { enabled: true, targetTaxableIncome: 60000 }, ...extra },
+    })
+    const compiled = (p: PlanV2) => compilePlan(p, { startYear: YEAR })
+    const destination = (p: PlanV2) => {
+      const c = compiled(p)
+      return { account: c.accounts[c.reinvestAccount], index: c.reinvestAccount, plan: c }
+    }
+
+    it('keeps the plan default until one is set', () => {
+      const { account, plan: c } = destination(meltdownPlan())
+      expect(account.synthetic).toBe(true)
+      expect(account.expectedReturnPct).toBe(c.expectedReturnPct)
+      expect(account.allocation).toBeNull()
+    })
+
+    it('uses a custom return, and the balance grows at it', () => {
+      const custom = destination(meltdownPlan({ reinvestGrowth: { returnOverridePct: 10 } }))
+      expect(custom.account.expectedReturnPct).toBe(10)
+      expect(custom.account.allocation).toBeNull()
+
+      const secondYearBalance = (p: PlanV2, index: number) => simulatePlan(p, flat).result.rows[1].balancesEnd[index]
+      const base = destination(meltdownPlan())
+      expect(secondYearBalance(meltdownPlan({ reinvestGrowth: { returnOverridePct: 10 } }), custom.index))
+        .toBeGreaterThan(secondYearBalance(meltdownPlan(), base.index))
+    })
+
+    it('follows an investment mix through the asset-class returns', () => {
+      const p = meltdownPlan({ reinvestGrowth: { allocation: { equity: 100, bond: 0, cash: 0 } } })
+      const { account } = destination(p)
+      expect(account.allocation).toEqual({ equity: 1, bond: 0, cash: 0 })
+      expect(account.expectedReturnPct).toBe(p.assumptions.assetReturns.equityPct)
+    })
+
+    it("leaves the person's own non-registered account alone", () => {
+      const p = meltdownPlan(
+        { reinvestGrowth: { returnOverridePct: 10 } },
+        [{ id: 'n', ownerId: 'a', type: 'NONREG', balance: 1000, returnOverridePct: 3 }],
+      )
+      const { account } = destination(p)
+      expect(account.id).toBe('n')
+      expect(account.expectedReturnPct).toBe(3)
+    })
   })
 })
 

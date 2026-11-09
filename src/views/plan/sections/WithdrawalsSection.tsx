@@ -1,5 +1,7 @@
 import { ArrowDown, ArrowUp } from 'lucide-react'
 import { usePlanStore } from '@/contexts/PlanStoreContext'
+import { useProjectionContext } from '@/contexts/ProjectionContext'
+import { useRoute } from '@/contexts/RouteContext'
 import { useDetailLevel } from '@/hooks/useDetailLevel'
 import { patchDrawdown, patchEstate } from '@/lib/plan/edits'
 import type { AccountType, SpendingStrategy } from '@/lib/plan/schema'
@@ -13,6 +15,7 @@ import { Checkbox } from '@/components/ui/Checkbox'
 import { IconButton } from '@/components/ui/Button'
 import { Advanced } from '@/components/ui/Advanced'
 import { RRIF_EARLIEST_CONVERSION_AGE, RRIF_LATEST_CONVERSION_AGE } from '@/lib/plan/schema'
+import { InvestmentMixFields } from '../InvestmentMixFields'
 
 const STRATEGIES: { kind: SpendingStrategy['kind']; label: string; help: string; advanced?: boolean }[] = [
   { kind: 'initialPct', label: 'Fixed withdrawal rate', help: 'Withdraw a % of savings in the first retirement year, then the same amount each year adjusted for inflation (the classic 4% rule).' },
@@ -36,6 +39,8 @@ function defaultStrategy(kind: SpendingStrategy['kind'], current: SpendingStrate
 
 export function WithdrawalsSection() {
   const { activePlan, updateActivePlan } = usePlanStore()
+  const { compiledPlan } = useProjectionContext()
+  const { navigate } = useRoute()
   const { isAdvanced } = useDetailLevel()
   const d = activePlan.drawdown
   const s = d.strategy
@@ -43,6 +48,8 @@ export function WithdrawalsSection() {
   const setStrategy = (strategy: SpendingStrategy) => update({ strategy })
   const couple = activePlan.people.length === 2
   const current = STRATEGIES.find(x => x.kind === s.kind)
+  const destination = compiledPlan.reinvestAccount >= 0 ? compiledPlan.accounts[compiledPlan.reinvestAccount] : undefined
+  const destinationLabel = activePlan.accounts.find(a => a.id === destination?.id)?.label
 
   const move = (type: AccountType, delta: number) => {
     const order = [...d.customOrder]
@@ -174,6 +181,23 @@ export function WithdrawalsSection() {
               <Field label="Target taxable income per person" hint="Today's dollars." className="sm:w-64">
                 <NumberInput value={d.meltdown.targetTaxableIncome} min={0} onChange={(v) => update({ meltdown: { ...d.meltdown, targetTaxableIncome: v } })} />
               </Field>
+            )}
+            {destination?.synthetic && (
+              <InvestmentMixFields
+                label="Investment mix of the new non-registered account"
+                hint="Reinvested money that doesn't fit in a TFSA goes to a non-registered account the plan creates. RRIF minimums you don't need and other money the plan invests for you can land there too."
+                value={d.reinvestGrowth}
+                expected={destination.expectedReturnPct}
+                onChange={(patch) => update({ reinvestGrowth: { ...d.reinvestGrowth, ...patch } })}
+              />
+            )}
+            {destination && !destination.synthetic && d.meltdown.enabled && (
+              <p className="text-xs text-fg-muted">
+                Reinvested money that doesn't fit in a TFSA goes to your non-registered account{destinationLabel ? ` (${destinationLabel})` : ''}.{' '}
+                <button type="button" className="font-medium text-fg-secondary underline hover:text-fg" onClick={() => navigate({ view: 'plan', sub: 'savings' })}>
+                  Set its investment mix under Savings
+                </button>
+              </p>
             )}
             <Checkbox
               checked={activePlan.estate.probate}

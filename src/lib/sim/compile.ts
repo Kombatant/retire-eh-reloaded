@@ -9,7 +9,9 @@ const TAXABLE_ACCOUNT_TYPES = new Set(['RRSP', 'RRIF', 'LIRA', 'LIF', 'FHSA'])
 const DEDUCTIBLE_ACCOUNT_TYPES = new Set(['RRSP', 'FHSA'])
 const NO_YIELDS = { interest: 0, eligibleDividends: 0, foreignDividends: 0 }
 
-function accountAllocation(a: AccountV2): CompiledAccount['allocation'] {
+type AccountGrowth = Pick<AccountV2, 'type' | 'allocation' | 'returnOverridePct'>
+
+function accountAllocation(a: AccountGrowth): CompiledAccount['allocation'] {
   if (a.returnOverridePct !== undefined) return null
   if (a.allocation) {
     const total = a.allocation.equity + a.allocation.bond + a.allocation.cash
@@ -19,7 +21,7 @@ function accountAllocation(a: AccountV2): CompiledAccount['allocation'] {
   return null
 }
 
-function accountExpectedReturn(a: AccountV2, plan: PlanV2): number {
+function accountExpectedReturn(a: AccountGrowth, plan: PlanV2): number {
   if (a.returnOverridePct !== undefined) return a.returnOverridePct
   if (a.allocation) {
     const r = plan.assumptions.assetReturns
@@ -335,6 +337,12 @@ export function compilePlan(plan: PlanV2, { startYear, rules = 'v2' }: CompileOp
   // Automatic TFSA deposits also need somewhere to overflow to.
   const hasRegistered = accounts.some(a => a.taxable || a.stock || a.type === 'TFSA')
   const reinvestAccount = rules === 'v2' && hasRegistered && people.length > 0 ? depositAccountFor(0) : -1
+  // The plan has no account of its own to set this on when the compiler made it.
+  if (reinvestAccount >= 0 && accounts[reinvestAccount].synthetic) {
+    const growth: AccountGrowth = { type: 'NONREG', ...plan.drawdown.reinvestGrowth }
+    accounts[reinvestAccount].expectedReturnPct = accountExpectedReturn(growth, plan)
+    accounts[reinvestAccount].allocation = accountAllocation(growth)
+  }
 
   const strategy = plan.drawdown.strategy
   return {

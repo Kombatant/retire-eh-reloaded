@@ -59,6 +59,11 @@ export function advancedSettingsInUse(plan: PlanV2): AdvancedSetting[] {
   if (!ESSENTIAL_STRATEGIES.has(d.strategy.kind)) add('withdrawals', 'Flexible withdrawal strategy')
   if (d.order === 'custom') add('withdrawals', 'Custom withdrawal order')
   if (d.meltdown.enabled) add('withdrawals', 'RRSP meltdown')
+  // Only the account the plan creates uses this; an existing one has its own mix.
+  const ownsNonRegistered = plan.accounts.some(a => a.type === 'NONREG' && a.ownerId === plan.people[0]?.id)
+  if (!ownsNonRegistered && (d.reinvestGrowth.allocation || d.reinvestGrowth.returnOverridePct !== undefined)) {
+    add('withdrawals', 'Investment mix for reinvested money')
+  }
   if (multi && d.rrifUseYoungerSpouseAge) add('withdrawals', "RRIF minimums on the younger spouse's age")
   if (!plan.estate.probate) add('withdrawals', 'Probate fees left out')
 

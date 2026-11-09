@@ -162,6 +162,16 @@ describe('App smoke test', () => {
     expect(screen.getByText('1 advanced setting is active')).toBeInTheDocument()
   })
 
+  it('sets how the account created for reinvested money is invested', () => {
+    window.history.replaceState(null, '', '/#/plan/withdrawals')
+    render(<App />)
+    fireEvent.click(screen.getByRole('switch', { name: 'Advanced mode' }))
+    const mix = screen.getByLabelText(/Investment mix of the new non-registered account/)
+    fireEvent.change(mix, { target: { value: 'balanced' } })
+    expect(mix).toHaveValue('balanced')
+    expect(screen.getByText('5.3% a year')).toBeInTheDocument()
+  })
+
   it('switches the theme for the whole app', () => {
     render(<App />)
     fireEvent.click(screen.getByRole('radio', { name: 'Dark' }))

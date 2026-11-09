@@ -399,6 +399,12 @@ export const drawdownSchema = z.object({
     enabled: z.boolean().default(false),
     targetTaxableIncome: money.default(57000),
   }).prefault({}),
+  // How to invest the non-registered account the plan creates to receive
+  // reinvested money, for plans without one of their own to use.
+  reinvestGrowth: z.object({
+    allocation: allocationSchema.optional(),
+    returnOverridePct: percent(-50, 50).optional(),
+  }).prefault({}),
   pensionSplitting: z.boolean().default(true),
 })
 export type DrawdownSettings = z.infer<typeof drawdownSchema>

@@ -23,6 +23,7 @@ import { Callout } from '@/components/ui/Callout'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Advanced } from '@/components/ui/Advanced'
 import { StockAccountEditor } from '../StockAccountEditor'
+import { InvestmentMixFields } from '../InvestmentMixFields'
 
 const GROUP_COLOR: Record<AccountGroup, string> = {
   registered: chartColors.registered,
@@ -30,22 +31,7 @@ const GROUP_COLOR: Record<AccountGroup, string> = {
   taxable: chartColors.nonRegistered,
 }
 
-const ALLOCATION_PRESETS: { key: string; label: string; allocation?: AccountV2['allocation'] }[] = [
-  { key: 'default', label: 'Plan default return' },
-  { key: 'conservative', label: 'Conservative (20% stocks)', allocation: { equity: 20, bond: 70, cash: 10 } },
-  { key: 'balanced', label: 'Balanced (60% stocks)', allocation: { equity: 60, bond: 40, cash: 0 } },
-  { key: 'growth', label: 'Growth (80% stocks)', allocation: { equity: 80, bond: 20, cash: 0 } },
-  { key: 'equity', label: 'All stocks', allocation: { equity: 100, bond: 0, cash: 0 } },
-]
-
 const NO_YIELDS = { interestPct: 0, eligibleDividendPct: 0, foreignDividendPct: 0 }
-
-function presetKey(account: AccountV2): string {
-  if (account.returnOverridePct !== undefined) return 'custom'
-  if (!account.allocation) return 'default'
-  const a = account.allocation
-  return ALLOCATION_PRESETS.find(p => p.allocation && p.allocation.equity === a.equity && p.allocation.bond === a.bond && p.allocation.cash === a.cash)?.key ?? 'custom'
-}
 
 export function SavingsSection() {
   const { activePlan, updateActivePlan, selectedPersonId } = usePlanStore()
@@ -181,7 +167,6 @@ function AccountEditor({ account }: { account: AccountV2 }) {
   const update = (patch: Partial<AccountV2>) => updateActivePlan(p => patchAccount(p, account.id, patch))
   const contribution = account.contributions[0]
   const expected = compiledPlan.accounts.find(a => a.id === account.id)?.expectedReturnPct ?? activePlan.assumptions.expectedReturn
-  const preset = presetKey(account)
 
   const common = (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -224,35 +209,8 @@ function AccountEditor({ account }: { account: AccountV2 }) {
       </div>
 
       <div className="space-y-4 border-t border-border pt-5">
-        <Field label="Investment mix" info="A mix uses the asset-class returns under Assumptions. The plan default uses the single expected return.">
-          <Select
-            value={preset}
-            onChange={(e) => {
-              const choice = ALLOCATION_PRESETS.find(p => p.key === e.target.value)
-              if (e.target.value === 'custom') update({ allocation: undefined, returnOverridePct: Math.round(expected * 10) / 10 })
-              else if (choice) update({ allocation: choice.allocation, returnOverridePct: undefined })
-            }}
-          >
-            {ALLOCATION_PRESETS.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
-            <option value="custom" disabled={preset !== 'custom'}>Custom return</option>
-          </Select>
-        </Field>
-        <p className="text-xs text-fg-muted">Expected return: <span className="font-medium text-fg">{expected.toFixed(1)}% a year</span></p>
+        <InvestmentMixFields value={account} expected={expected} onChange={update} />
         <Advanced>
-          <Field label="Custom expected return" hint="A compounded yearly rate. Overrides the mix for this account only. Clear it to go back to the mix.">
-            <div className="flex gap-2">
-              <PercentInput
-                className="w-32"
-                value={account.returnOverridePct ?? expected}
-                onChange={(v) => update({ allocation: undefined, returnOverridePct: v })}
-              />
-              {account.returnOverridePct !== undefined && (
-                <button type="button" className="text-[13px] font-medium text-fg-secondary hover:text-fg" onClick={() => update({ returnOverridePct: undefined })}>
-                  Clear
-                </button>
-              )}
-            </div>
-          </Field>
           <Checkbox
             checked={contribution?.indexed ?? false}
             onChange={(on) => updateActivePlan(p => setAccountContributionRule(p, account.id, { indexed: on }))}
