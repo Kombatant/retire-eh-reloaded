@@ -54,12 +54,12 @@ export function AssumptionsSection() {
       <Card>
         <CardHeader
           title="Market and inflation"
-          description="Long-run averages used for every projection. Lower returns are the more cautious choice."
+          description="Long-run yearly rates used for every projection. Lower returns are the more cautious choice."
         />
         <div className="space-y-6">
           <RateSlider
             label="Investment return"
-            info="Expected average yearly return before inflation, after fees. Accounts with an investment mix use the asset-class returns instead."
+            info="The yearly rate you expect savings to compound at over the long run, before inflation and after fees. Accounts with an investment mix use the asset-class returns instead."
             value={assumptions.expectedReturn}
             min={0}
             max={15}
@@ -88,7 +88,7 @@ export function AssumptionsSection() {
         <Card>
           <CardHeader
             title="Asset-class returns"
-            description="Used for accounts with an investment mix (Savings › account › Investment mix). Defaults follow FP Canada's projection guidelines."
+            description="Compounded yearly rates, used for accounts with an investment mix (Savings › account › Investment mix). Defaults follow FP Canada's projection guidelines."
           />
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <Field label="Stocks">

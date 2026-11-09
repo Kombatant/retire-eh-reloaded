@@ -282,6 +282,16 @@ describe('stock scenarios and market paths', () => {
     expect(compareStockScenarios(p, YEAR).map(r => r.scenario)).toEqual(['bear', 'base', 'bull', 'custom'])
   })
 
+  it('compounds a typical Monte Carlo year at the entered growth plus dividend', () => {
+    const p = plan({ holdings: [holding({ dividendYieldPct: 1, volatilityPct: 40 })] }, {}, 40, 65)
+    const c = compilePlan(p, { startYear: YEAR })
+    const s = settingsFromPlan(p)
+    const draws: number[] = []
+    for (let seed = 1; seed <= 400; seed++) draws.push(...monteCarloPath(c, s, mulberry32(seed)).stocks![0])
+    draws.sort((a, b) => a - b)
+    expect(Math.abs(draws[Math.floor(draws.length / 2)] - 0.11)).toBeLessThan(0.015)
+  })
+
   it('gives each holding its own Monte Carlo, historical and crash path', () => {
     const p = plan({ holdings: [holding(), holding({ id: 'h2', symbol: 'BETA' })] })
     const c = compilePlan(p, { startYear: YEAR })

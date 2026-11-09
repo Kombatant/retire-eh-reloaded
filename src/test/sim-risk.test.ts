@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { planSchema, type PlanV2, type PlanV2Input } from '@/lib/plan/schema'
 import { compilePlan, simulate, deterministicPath } from '@/lib/sim'
 import { mulberry32 } from '@/lib/sim/rng'
-import { lognormalReturn, monteCarloPath } from '@/lib/sim/paths/monteCarlo'
+import { arithmeticFromCompounded, lognormalReturn, monteCarloPath } from '@/lib/sim/paths/monteCarlo'
 import { HISTORICAL_DATA, historicalPath, overlayPath } from '@/lib/sim/paths/historical'
 import { runBacktest, runCrashScenarios, runMonteCarlo, runMonteCarloBatch, settingsFromPlan, summarizeRuns } from '@/lib/sim/risk'
 
@@ -35,6 +35,29 @@ describe('market paths', () => {
     }
     expect(total / n).toBeCloseTo(0.07, 2)
     expect(lognormalReturn(0.05, 0, 3)).toBe(0.05)
+  })
+
+  it('converts a compounded rate to the mean whose median draw equals it', () => {
+    expect(arithmeticFromCompounded(0.05, 0.3)).toBeCloseTo(0.0891, 3)
+    expect(lognormalReturn(arithmeticFromCompounded(0.05, 0.3), 0.3, 0)).toBeCloseTo(0.05, 10)
+    expect(lognormalReturn(arithmeticFromCompounded(-0.1, 0.5), 0.5, 0)).toBeCloseTo(-0.1, 10)
+    expect(arithmeticFromCompounded(0.05, 0)).toBe(0.05)
+  })
+
+  it('compounds a typical year at the entered asset-class and portfolio rates', () => {
+    const p = plan()
+    const c = compilePlan(p, { startYear: YEAR })
+    const s = settingsFromPlan(p)
+    const equity: number[] = []
+    const portfolio: number[] = []
+    for (let seed = 1; seed <= 400; seed++) {
+      const path = monteCarloPath(c, s, mulberry32(seed))
+      equity.push(...path.assets!.equity)
+      portfolio.push(...path.nominalReturn)
+    }
+    const median = (v: number[]) => v.sort((a, b) => a - b)[Math.floor(v.length / 2)]
+    expect(Math.abs(median(equity) - c.assetReturnsPct.equity / 100)).toBeLessThan(0.01)
+    expect(Math.abs(median(portfolio) - c.expectedReturnPct / 100)).toBeLessThan(0.01)
   })
 
   it('is reproducible for a seed and matches the deterministic path at zero volatility', () => {

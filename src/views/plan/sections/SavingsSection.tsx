@@ -239,7 +239,7 @@ function AccountEditor({ account }: { account: AccountV2 }) {
         </Field>
         <p className="text-xs text-fg-muted">Expected return: <span className="font-medium text-fg">{expected.toFixed(1)}% a year</span></p>
         <Advanced>
-          <Field label="Custom expected return" hint="Overrides the mix for this account only. Clear it to go back to the mix.">
+          <Field label="Custom expected return" hint="A compounded yearly rate. Overrides the mix for this account only. Clear it to go back to the mix.">
             <div className="flex gap-2">
               <PercentInput
                 className="w-32"

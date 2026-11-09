@@ -216,7 +216,7 @@ function HoldingRow({ account, holding }: { account: StockAccount; holding: Hold
             <label>
               <span className={labelClass}>
                 Volatility %
-                <InfoTooltip text="Typical yearly swing (standard deviation) used by Monte Carlo. Large, stable companies are often 20–30%; small or fast-growing ones 40%+." />
+                <InfoTooltip text="Typical yearly swing (standard deviation) used by Monte Carlo. A higher value widens the range of outcomes around your growth rate. Large, stable companies are often 20–30%; small or fast-growing ones 40%+." />
               </span>
               {numberField(holding.volatilityPct, v => update({ volatilityPct: Math.max(0, v) }), { min: 0, max: 150, label: 'Volatility' })}
             </label>
@@ -306,7 +306,7 @@ function PriceCaseTable({ account, scenario }: { account: StockAccount; scenario
     <div>
       <div className={labelClass}>
         Price case for projections
-        <InfoTooltip text="Your view of how each share price might grow per year, excluding dividends: a bad, expected and good case, plus a custom rate of your own (the base rate until you enter one). The highlighted case is used across the whole plan." />
+        <InfoTooltip text="Your view of the yearly rate each share price might compound at over the long run, excluding dividends: a bad, expected and good case, plus a custom rate of your own (the base rate until you enter one). The highlighted case is used across the whole plan." />
       </div>
       <div className="overflow-x-auto rounded-lg border border-border">
         <table className="w-full table-fixed border-collapse text-[13px]">

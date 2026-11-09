@@ -43,7 +43,7 @@ describe('runRetirementTimingJob', { timeout: 120_000 }, () => {
   })
 
   it('finds an age after the plan when the plan falls short', async () => {
-    const timing = (await job(plan(100_000)))!
+    const timing = (await job(plan(110_000)))!
     expect(timing.options[timing.currentIndex].safe).toBe(false)
     expect(timing.safestIndex).not.toBeNull()
     expect(timing.options[timing.safestIndex!].shift).toBeGreaterThan(0)

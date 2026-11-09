@@ -166,7 +166,7 @@ export const holdingSchema = z.object({
   dividendYieldPct: percent(0, 20).default(0),
   // Canadian eligible dividends get the dividend tax credit; foreign dividends are ordinary income.
   dividendType: z.enum(['eligible', 'foreign']).default('eligible'),
-  // Annual price growth (excluding dividends) for each projection case.
+  // Compounded annual price growth (excluding dividends) for each projection case.
   growthPct: z.object({
     bear: percent(-50, 50).default(0),
     base: percent(-50, 50).default(5),
@@ -420,7 +420,7 @@ export const assumptionsSchema = z.object({
     rate: z.number().positive().default(DEFAULT_USD_CAD),
     asOf: z.string().optional(), // date of the Bank of Canada observation
   }).prefault({}),
-  // Long-run nominal returns per asset class, used for accounts with an
+  // Long-run compounded nominal returns per asset class, used for accounts with an
   // allocation. Defaults follow the FP Canada projection assumption guidelines.
   assetReturns: z.object({
     equityPct: percent(-10, 30).default(6.6),

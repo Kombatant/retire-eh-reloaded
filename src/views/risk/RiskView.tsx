@@ -6,7 +6,9 @@ import { useProjectionContext } from '@/contexts/ProjectionContext'
 import { useRiskAnalysis } from '@/hooks/useRiskAnalysis'
 import { useSubView } from '@/hooks/useSubView'
 import { patchSimulation } from '@/lib/plan/edits'
+import { scenarioGrowthPct, type PlanV2 } from '@/lib/plan/schema'
 import { HISTORICAL_RANGE, HISTORICAL_SOURCE } from '@/lib/sim/paths/historical'
+import { arithmeticFromCompounded } from '@/lib/sim/paths/monteCarlo'
 import { successDescription, successIsMeaningful } from '@/lib/sim/risk'
 import { householdBaseAge } from '@/lib/sim'
 import { money, moneyCompact } from '@/lib/formatting'
@@ -107,6 +109,25 @@ export function RiskView() {
   )
 }
 
+// The averages the simulation actually draws around, so the inputs aren't a
+// black box next to the volatility settings.
+function simulatedAverages(plan: PlanV2): string {
+  const a = plan.assumptions
+  const s = a.simulation
+  const rows: [string, number, number][] = [
+    ['stocks', a.assetReturns.equityPct, s.equityVolPct],
+    ['bonds', a.assetReturns.bondPct, s.bondVolPct],
+    ['cash', a.assetReturns.cashPct, s.cashVolPct],
+    ['default portfolio', a.expectedReturn, s.portfolioVolPct],
+    ...plan.accounts.flatMap(acct => acct.type === 'STOCK' ? acct.holdings : []).map((h): [string, number, number] => [
+      h.symbol.trim() || 'unnamed stock',
+      scenarioGrowthPct(h.growthPct, a.stockScenario) + h.dividendYieldPct,
+      h.volatilityPct,
+    ]),
+  ]
+  return rows.map(([label, pct, vol]) => `${label} ${(arithmeticFromCompounded(pct / 100, vol / 100) * 100).toFixed(1)}%`).join(', ')
+}
+
 function MonteCarloCard() {
   const { activePlan, updateActivePlan } = usePlanStore()
   const { compiledPlan } = useProjectionContext()
@@ -170,6 +191,9 @@ function MonteCarloCard() {
           <Checkbox className="pb-1.5" checked={sim.stochasticInflation} onChange={(on) => update({ stochasticInflation: on })} label="Random inflation" />
           <Button size="sm" icon={RefreshCw} onClick={() => update({ seed: (sim.seed * 7919 + 13) % 1000003 })}>New random draw</Button>
         </div>
+        <p className="mt-3 text-xs text-fg-muted">
+          Yearly swings drag down compounding, so to compound at the rates you entered the simulation uses these higher yearly averages: {simulatedAverages(activePlan)}.
+        </p>
       </Advanced>
     </Card>
   )

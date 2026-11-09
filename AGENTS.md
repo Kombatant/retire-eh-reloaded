@@ -30,6 +30,7 @@ The application is 100% pure TypeScript (React + Vite). All calculations run cli
   - `legacyAdapter.ts` turns the output into the series the existing charts use.
   - Deterministic projections, scenario bands and (later) Monte Carlo and backtests all reuse `simulate`.
 - **Risk** (`src/lib/sim/risk.ts`, `paths/`): Monte Carlo (correlated lognormal asset returns plus AR(1) inflation, seeded), historical backtest over `src/data/historical/canada-annual.json`, and crash overlays. All run on `simulate`.
+  - Return inputs are long-run compounded rates. `monteCarloPath` converts them to arithmetic means with `arithmeticFromCompounded`, so a typical run compounds at the rate entered.
   - The Risk tab runs them in a Web Worker (`src/workers/sim.worker.ts`) through `useRiskAnalysis`.
   - Results stream in batches and are cached by plan.
   - In tests, where jsdom has no Worker, a small sample runs synchronously instead.

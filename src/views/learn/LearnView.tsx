@@ -235,6 +235,9 @@ const sections: LearnSection[] = [
           The <strong className="text-fg">Monte Carlo</strong> simulation re-runs your whole plan (taxes, benefits, withdrawals) hundreds of times with random yearly returns for Canadian equities, bonds and cash, and optionally random inflation that persists from year to year. The chance of success is the share of runs where every year is funded.
         </p>
         <p>
+          The returns you enter are <strong className="text-fg">long-run compounded rates</strong>, the same convention as FP Canada's projection guidelines. A loss takes a bigger gain to recover, so an investment that swings needs a higher average yearly return to compound at a given rate. Monte Carlo makes that adjustment using each investment's volatility: a typical run compounds at the rate you entered, and higher volatility widens the range of outcomes around it.
+        </p>
+        <p>
           The <strong className="text-fg">historical backtest</strong> replays actual Canadian returns and inflation (1957–2015, derived from Statistics Canada tables) starting in each year. Plans longer than the data wrap around. Stress tests replay the 2008 crisis, the 2000–2002 tech crash and 1970s stagflation at the start of retirement.
         </p>
         <p>
