@@ -112,7 +112,7 @@ function SidebarFooter() {
       </div>
       <div className="flex items-center justify-between pt-1 text-xs text-fg-muted">
         <a
-          href="https://github.com/halfguru/retire-eh"
+          href="https://github.com/Kombatant/retire-eh-reloaded"
           target="_blank"
           rel="noopener noreferrer"
           className="hover:text-fg"
