@@ -44,6 +44,19 @@ describe('withdrawal solver', () => {
     expect(solveIncreasing(w => w + 10, 0, 100)).toBe(0)
     expect(solveIncreasing(w => w - 1000, 0, 100)).toBe(100)
   })
+  it('finds a root on a shallow stretch instead of returning the upper bound', () => {
+    // After-tax cash barely rises where a clawback takes most of each dollar.
+    // Secant steps then creep up from below while the far bound never moves.
+    const f = (w: number) => (w < 60000 ? 0.02 * (w - 60000) : w - 60000)
+    const w = solveIncreasing(f, 0, 5e6)
+    expect(Math.abs(f(w))).toBeLessThanOrEqual(0.5)
+  })
+  it('stops just past a jump over zero', () => {
+    const f = (w: number) => (w < 60000 ? -500 : 1000 + (w - 60000))
+    const w = solveIncreasing(f, 0, 5e6)
+    expect(w).toBeGreaterThanOrEqual(60000)
+    expect(w).toBeLessThan(60001)
+  })
 })
 
 describe('real estate and debts', () => {
