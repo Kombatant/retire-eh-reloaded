@@ -5,7 +5,7 @@ import { useStockQuotes } from '@/hooks/useStockQuotes'
 import { addHolding, patchHolding, removeHolding, setStockSalePlan, setStockScenario, setUsdCad } from '@/lib/plan/edits'
 import { newId } from '@/lib/plan/ids'
 import { DEFAULT_USD_CAD, STOCK_SCENARIOS, scenarioGrowthPct, type AccountV2, type Holding, type RsuGrant, type StockScenario } from '@/lib/plan/schema'
-import { QUOTE_PROVIDERS, isStale, type QuoteProvider } from '@/lib/market/quotes'
+import { QUOTE_PROVIDERS, canFetchQuotes, isStale, type QuoteProvider } from '@/lib/market/quotes'
 import { formatMoney } from '@/lib/formatting'
 import { NumberInput } from '@/components/ui/NumberInput'
 import { DecimalInput } from '@/components/ui/inputs'
@@ -269,30 +269,33 @@ function MarketDataSettingsPanel() {
         <label>
           <span className={labelClass}>Price source</span>
           <select value={settings.provider} onChange={(e) => quotes.setSettings({ provider: e.target.value as QuoteProvider })} className={inputClass}>
-            {(Object.keys(QUOTE_PROVIDERS) as QuoteProvider[]).map(k => <option key={k} value={k}>{QUOTE_PROVIDERS[k].name}</option>)}
+            {(Object.keys(QUOTE_PROVIDERS) as QuoteProvider[]).map(k => <option key={k} value={k}>{QUOTE_PROVIDERS[k].name}{QUOTE_PROVIDERS[k].needsKey ? '' : ' (no key)'}</option>)}
           </select>
         </label>
-        <label>
-          <span className={labelClass}>
-            API key (<a href={provider.keyUrl} target="_blank" rel="noreferrer" className="text-accent underline">get a free key</a>)
-          </span>
-          <input
-            type="password"
-            autoComplete="off"
-            value={settings.apiKey}
-            onChange={(e) => quotes.setSettings({ apiKey: e.target.value.trim() })}
-            className={inputClass}
-            aria-label="Market data API key"
-          />
-        </label>
+        {provider.needsKey && (
+          <label>
+            <span className={labelClass}>
+              API key (<a href={provider.keyUrl} target="_blank" rel="noreferrer" className="text-accent underline">get a free key</a>)
+            </span>
+            <input
+              type="password"
+              autoComplete="off"
+              value={settings.apiKey}
+              onChange={(e) => quotes.setSettings({ apiKey: e.target.value.trim() })}
+              className={inputClass}
+              aria-label="Market data API key"
+            />
+          </label>
+        )}
       </div>
       <label className="flex items-center gap-2 text-fg-secondary">
         <input type="checkbox" checked={settings.autoRefresh} onChange={(e) => quotes.setSettings({ autoRefresh: e.target.checked })} />
         Update prices automatically once a day when I open the plan
       </label>
       <p className="text-[11px] text-fg-muted">
-        {provider.note} Share prices are kept in US dollars; Canadian listings are converted with Bank of Canada daily rates. The key is stored only in this browser and is
-        never included in exports or share links; your symbols are sent to {provider.name} to look up prices.
+        {provider.note} Share prices are kept in US dollars; Canadian listings are converted with Bank of Canada daily rates.{' '}
+        {provider.needsKey && 'The key is stored only in this browser and is never included in exports or share links. '}
+        Your symbols are sent to {provider.name} to look up prices.
       </p>
     </div>
   )
@@ -366,7 +369,8 @@ function PriceCaseTable({ account, scenario }: { account: StockAccount; scenario
 export function StockAccountEditor({ account }: { account: StockAccount }) {
   const { activePlan, updateActivePlan, nowYear } = usePlanStore()
   const quotes = useStockQuotes()
-  const [showSettings, setShowSettings] = useState(!quotes.settings.apiKey)
+  const ready = canFetchQuotes(quotes.settings)
+  const [showSettings, setShowSettings] = useState(!ready)
   const sale = account.salePlan
   const scenario = activePlan.assumptions.stockScenario
   const fx = activePlan.assumptions.usdCad
@@ -385,9 +389,9 @@ export function StockAccountEditor({ account }: { account: StockAccount }) {
         <div className="flex items-center gap-3">
           <button
             onClick={() => void quotes.refresh()}
-            disabled={!quotes.settings.apiKey || !hasSymbols || quotes.refreshing}
+            disabled={!ready || !hasSymbols || quotes.refreshing}
             className="flex items-center gap-1 text-accent font-medium min-h-[28px] disabled:text-fg-muted"
-            title={!quotes.settings.apiKey ? 'Add an API key under Price data' : 'Fetch current prices'}
+            title={!ready ? 'Add an API key under Price data' : 'Fetch current prices'}
           >
             <RefreshCw className={`w-3.5 h-3.5 ${quotes.refreshing ? 'animate-spin' : ''}`} />
             {quotes.refreshing ? 'Updating…' : 'Refresh prices'}

@@ -176,7 +176,8 @@ Provider order in `App.tsx`: ThemeProvider › ToastProvider › RouteProvider �
 - Couples also share unused age and pension amounts (Schedule 2) and one low-income reduction in NL, PE, NS and NB (`household.ts`).
 - Household tax (`household.ts`) gives the spouse amount to the higher earner and limits a receiver under 65 to pension-plan income for the pension credit. FHSAs end by `fhsa.closureYear` and roll into the RRSP; a `homePurchaseYear` takes the balance out tax-free.
 - `src/lib/market/quotes.ts`: live stock quotes, fetched from the browser.
-  - Providers: Twelve Data or Alpha Vantage, with the user's free API key.
+  - Providers: Yahoo Finance (default, no key) or Twelve Data / Alpha Vantage with the user's free API key.
+  - Yahoo sends no CORS headers, so the browser calls `/api/yahoo/v8/finance/chart/…`, which `docker/nginx.conf` and the Vite dev/preview server forward with an honest client User-Agent (Yahoo throttles forwarded browser strings). nginx's `resolver` is written at container start by `docker/40-yahoo-resolver.sh`. A static copy (the release zip) has no proxy and needs a keyed provider.
   - USD→CAD conversion uses the Bank of Canada Valet API.
   - The key is stored in localStorage (`retireEh.marketData`) and never in the plan, so it isn't exported or shared.
   - `useAutoRefreshQuotes` (in App) refreshes stale prices once a day.

@@ -3,6 +3,7 @@ import { usePlanStore } from '@/contexts/PlanStoreContext'
 import type { PlanV2 } from '@/lib/plan/schema'
 import { applyQuotes, setUsdCad } from '@/lib/plan/edits'
 import {
+  canFetchQuotes,
   fetchUsdCad,
   isStale,
   loadMarketDataSettings,
@@ -107,12 +108,13 @@ export function useStockQuotes() {
 }
 
 // Mounted once in the app shell: refresh stale prices (fetched before today)
-// when a plan with stock symbols is opened, if a key is saved.
+// when a plan with stock symbols is opened, if the provider is ready (keyless,
+// or its key is saved).
 export function useAutoRefreshQuotes() {
   const { activePlan, updatePlan } = usePlanStore()
   const { settings } = useSyncExternalStore(subscribe, () => status)
   useEffect(() => {
-    if (!settings.autoRefresh || !settings.apiKey || autoRefreshed.has(activePlan.id)) return
+    if (!settings.autoRefresh || !canFetchQuotes(settings) || autoRefreshed.has(activePlan.id)) return
     if (!needsRefresh(activePlan)) return
     void runRefresh(activePlan, updatePlan)
   }, [activePlan, updatePlan, settings])

@@ -1,25 +1,55 @@
 // Live stock quotes and exchange rates, fetched directly from the browser.
 //
-// The app has no server, so it can only use services that allow cross-origin
-// requests. Quotes need a free API key from the user's chosen provider;
-// exchange rates come from the Bank of Canada (no key). Symbols and the key
-// are sent only to those services.
+// Twelve Data, Alpha Vantage and the Bank of Canada allow cross-origin
+// requests, so the browser calls them directly. Twelve Data and Alpha Vantage
+// need a free API key from the user. Yahoo Finance needs no key but sends no
+// CORS headers, so it is reached through `/api/yahoo/`, which the app's own
+// server forwards (docker/nginx.conf, and vite.config.ts in development). A
+// copy of the app served as plain static files has no such path and needs a
+// keyed provider. Symbols and the key are sent only to the chosen service.
 
-export type QuoteProvider = 'twelvedata' | 'alphavantage'
+export type QuoteProvider = 'yahoo' | 'twelvedata' | 'alphavantage'
 
-export const QUOTE_PROVIDERS: Record<QuoteProvider, { name: string; keyUrl: string; note: string; minIntervalMs: number }> = {
+export interface QuoteProviderInfo {
+  name: string
+  needsKey: boolean
+  keyUrl?: string
+  note: string
+  minIntervalMs: number
+}
+
+export const QUOTE_PROVIDERS: Record<QuoteProvider, QuoteProviderInfo> = {
+  yahoo: {
+    name: 'Yahoo Finance',
+    needsKey: false,
+    note: "No key needed. Prices go through this app's server, so this works with the Docker image and the development server, not a static copy.",
+    // Unofficial endpoint with an unpublished per-IP limit: stay gentle.
+    minIntervalMs: 300,
+  },
   twelvedata: {
     name: 'Twelve Data',
+    needsKey: true,
     keyUrl: 'https://twelvedata.com/pricing',
     note: 'Free key: 800 requests a day, 8 a minute. US and TSX symbols.',
     minIntervalMs: 8000,
   },
   alphavantage: {
     name: 'Alpha Vantage',
+    needsKey: true,
     keyUrl: 'https://www.alphavantage.co/support/#api-key',
     note: 'Free key: 25 requests a day.',
     minIntervalMs: 1200,
   },
+}
+
+export const DEFAULT_QUOTE_PROVIDER: QuoteProvider = 'yahoo'
+
+// Same-origin path that the app's server forwards to query1.finance.yahoo.com.
+export const YAHOO_PROXY_PATH = '/api/yahoo'
+
+// Whether these settings can fetch prices: a keyed provider needs its key.
+export function canFetchQuotes(settings: { provider: QuoteProvider; apiKey: string }): boolean {
+  return !QUOTE_PROVIDERS[settings.provider].needsKey || settings.apiKey.trim() !== ''
 }
 
 export interface Quote {
@@ -126,9 +156,60 @@ async function alphaVantage(fetchImpl: FetchLike, apiKey: string, input: string)
   }
 }
 
+// Yahoo writes a share class with a dash (BRK-B, RCI-B.TO) and uses .TO, .V
+// and .NE for the Canadian exchanges.
+export function yahooSymbol(input: string): string {
+  const parsed = parseSymbol(input)
+  const base = parsed.base.replace(/\./g, '-')
+  const suffix = parsed.exchange === 'TSX' ? '.TO' : parsed.exchange === 'TSXV' ? '.V' : parsed.exchange === 'NEO' ? '.NE' : ''
+  return base + suffix
+}
+
+// Some exchanges quote in a minor unit (London in pence).
+const MINOR_UNITS: Record<string, { currency: string; divisor: number }> = {
+  GBp: { currency: 'GBP', divisor: 100 },
+  GBX: { currency: 'GBP', divisor: 100 },
+  ZAc: { currency: 'ZAR', divisor: 100 },
+  ILA: { currency: 'ILS', divisor: 100 },
+}
+
+// The anonymous chart endpoint, as used by other quote widgets: the quote
+// endpoints that return more detail now need a cookie and crumb handshake.
+// `range=1d` keeps the response to the latest session.
+async function yahoo(fetchImpl: FetchLike, input: string): Promise<Quote> {
+  const symbol = yahooSymbol(input)
+  const body = await getJson(fetchImpl, `${YAHOO_PROXY_PATH}/v8/finance/chart/${encodeURIComponent(symbol)}?range=1d&interval=1d`)
+  const chart = body.chart as { result?: { meta?: Record<string, unknown> }[] | null; error?: { code?: string; description?: string } | null } | undefined
+  // Anything but Yahoo's JSON (usually the app's own index.html) means this
+  // server does not forward the path.
+  if (!chart) throw new QuoteError('network', 'Yahoo Finance is not available from this copy of the app. Choose a provider with an API key.')
+  if (chart.error) {
+    if (/not ?found/i.test(String(chart.error.code ?? ''))) throw new QuoteError('notFound', `No quote for ${input}.`)
+    throw new QuoteError('unknown', chart.error.description || 'Quote not available.')
+  }
+  const meta = chart.result?.[0]?.meta ?? {}
+  let price = num(meta.regularMarketPrice)
+  if (!(price > 0)) throw new QuoteError('notFound', `No quote for ${input}.`)
+  let currency = String(meta.currency ?? parseSymbol(input).currencyHint ?? 'USD')
+  const minor = MINOR_UNITS[currency]
+  if (minor) {
+    price /= minor.divisor
+    currency = minor.currency
+  }
+  const timestamp = num(meta.regularMarketTime)
+  return {
+    symbol: input.trim().toUpperCase(),
+    price,
+    currency: currency.toUpperCase(),
+    asOf: timestamp > 0 ? new Date(timestamp * 1000).toISOString() : new Date().toISOString(),
+    source: QUOTE_PROVIDERS.yahoo.name,
+  }
+}
+
 export async function fetchQuote(provider: QuoteProvider, apiKey: string, symbol: string, fetchImpl: FetchLike = fetch): Promise<Quote> {
-  if (!apiKey.trim()) throw new QuoteError('auth', 'Add an API key to fetch prices.')
+  if (QUOTE_PROVIDERS[provider].needsKey && !apiKey.trim()) throw new QuoteError('auth', 'Add an API key to fetch prices.')
   if (!symbol.trim()) throw new QuoteError('notFound', 'Enter a symbol first.')
+  if (provider === 'yahoo') return yahoo(fetchImpl, symbol)
   return provider === 'alphavantage'
     ? alphaVantage(fetchImpl, apiKey.trim(), symbol)
     : twelveData(fetchImpl, apiKey.trim(), symbol)
@@ -200,8 +281,9 @@ export async function refreshQuotes(
       result.prices[symbol] = { ...quote, fxToCad: rate, priceUsd: quote.currency === 'USD' ? quote.price : (quote.price * rate) / usdCad }
     } catch (error) {
       result.errors[symbol] = error instanceof Error ? error.message : 'Quote failed.'
-      // Bad key or rate limit will fail every remaining symbol too.
-      if (error instanceof QuoteError && (error.kind === 'auth' || error.kind === 'rateLimit')) {
+      // A bad key, a rate limit or an unreachable service will fail every
+      // remaining symbol too.
+      if (error instanceof QuoteError && (error.kind === 'auth' || error.kind === 'rateLimit' || error.kind === 'network')) {
         for (const rest of unique.slice(i + 1)) result.errors[rest] = error.message
         break
       }
@@ -224,13 +306,15 @@ const SETTINGS_KEY = 'retireEh.marketData'
 export function loadMarketDataSettings(): MarketDataSettings {
   try {
     const raw = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? '{}')
-    return {
-      provider: raw.provider === 'alphavantage' ? 'alphavantage' : 'twelvedata',
-      apiKey: typeof raw.apiKey === 'string' ? raw.apiKey : '',
-      autoRefresh: raw.autoRefresh !== false,
-    }
+    const apiKey = typeof raw.apiKey === 'string' ? raw.apiKey : ''
+    const known = typeof raw.provider === 'string' && raw.provider in QUOTE_PROVIDERS
+    // A keyed provider saved without a key never worked: use the keyless one.
+    const provider: QuoteProvider = known && (apiKey || !QUOTE_PROVIDERS[raw.provider as QuoteProvider].needsKey)
+      ? raw.provider
+      : DEFAULT_QUOTE_PROVIDER
+    return { provider, apiKey, autoRefresh: raw.autoRefresh !== false }
   } catch {
-    return { provider: 'twelvedata', apiKey: '', autoRefresh: true }
+    return { provider: DEFAULT_QUOTE_PROVIDER, apiKey: '', autoRefresh: true }
   }
 }
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { fetchFxToCad, fetchQuote, fetchUsdCad, isStale, parseSymbol, refreshQuotes, QuoteError } from '@/lib/market/quotes'
+import { canFetchQuotes, fetchFxToCad, fetchQuote, fetchUsdCad, isStale, loadMarketDataSettings, parseSymbol, refreshQuotes, yahooSymbol, QuoteError } from '@/lib/market/quotes'
 import { addAccount, addHolding, applyQuotes, newHolding, patchHolding, setUsdCad } from '@/lib/plan/edits'
 import { parsePlanData } from '@/lib/plan/migrate'
 import { createDefaultPlan } from '@/lib/plan/defaults'
@@ -58,6 +58,52 @@ describe('quote providers', () => {
     await expect(fetchQuote('twelvedata', 'k', 'AAPL', offline.fetchImpl)).rejects.toMatchObject({ kind: 'network' })
   })
 
+  it('writes symbols the way Yahoo does', () => {
+    expect(yahooSymbol('shop.tsx')).toBe('SHOP.TO')
+    expect(yahooSymbol('ABC.V')).toBe('ABC.V')
+    expect(yahooSymbol('XYZ.NEO')).toBe('XYZ.NE')
+    expect(yahooSymbol('BRK.B')).toBe('BRK-B')
+    expect(yahooSymbol('RCI.B.TO')).toBe('RCI-B.TO')
+  })
+
+  it('reads a Yahoo quote through the app server without a key', async () => {
+    const meta = { currency: 'CAD', symbol: 'SHOP.TO', regularMarketPrice: 214.86, regularMarketTime: 1794258000 }
+    const { fetchImpl, calls } = mockFetch(() => ({ body: { chart: { result: [{ meta }], error: null } } }))
+    const quote = await fetchQuote('yahoo', '', 'shop.to', fetchImpl)
+    expect(quote).toMatchObject({ symbol: 'SHOP.TO', price: 214.86, currency: 'CAD', source: 'Yahoo Finance' })
+    expect(quote.asOf).toBe(new Date(1794258000 * 1000).toISOString())
+    expect(calls[0]).toBe('/api/yahoo/v8/finance/chart/SHOP.TO?range=1d&interval=1d')
+  })
+
+  it('converts Yahoo prices quoted in pence to pounds', async () => {
+    const { fetchImpl } = mockFetch(() => ({ body: { chart: { result: [{ meta: { currency: 'GBp', regularMarketPrice: 1234 } }] } } }))
+    expect(await fetchQuote('yahoo', '', 'VOD.L', fetchImpl)).toMatchObject({ price: 12.34, currency: 'GBP' })
+  })
+
+  it('reports unknown Yahoo symbols, and a server that does not forward Yahoo', async () => {
+    const missing = mockFetch(() => ({ status: 404, body: { chart: { result: null, error: { code: 'Not Found', description: 'No data found' } } } }))
+    await expect(fetchQuote('yahoo', '', 'ZZZZ', missing.fetchImpl)).rejects.toMatchObject({ kind: 'notFound' })
+    // A static copy answers with index.html, which is not JSON.
+    const html = { fetchImpl: async () => ({ ok: true, status: 200, json: async () => { throw new SyntaxError('Unexpected token <') } }) }
+    await expect(fetchQuote('yahoo', '', 'AAPL', html.fetchImpl)).rejects.toMatchObject({ kind: 'network' })
+  })
+
+  it('needs a key only for keyed providers', () => {
+    expect(canFetchQuotes({ provider: 'yahoo', apiKey: '' })).toBe(true)
+    expect(canFetchQuotes({ provider: 'twelvedata', apiKey: '' })).toBe(false)
+    expect(canFetchQuotes({ provider: 'twelvedata', apiKey: 'k' })).toBe(true)
+  })
+
+  it('uses the keyless provider unless a keyed one has its key', () => {
+    localStorage.removeItem('retireEh.marketData')
+    expect(loadMarketDataSettings().provider).toBe('yahoo')
+    localStorage.setItem('retireEh.marketData', JSON.stringify({ provider: 'twelvedata', apiKey: '', autoRefresh: false }))
+    expect(loadMarketDataSettings()).toEqual({ provider: 'yahoo', apiKey: '', autoRefresh: false })
+    localStorage.setItem('retireEh.marketData', JSON.stringify({ provider: 'alphavantage', apiKey: 'k' }))
+    expect(loadMarketDataSettings().provider).toBe('alphavantage')
+    localStorage.removeItem('retireEh.marketData')
+  })
+
   it('converts to CAD with the Bank of Canada rate', async () => {
     const { fetchImpl, calls } = mockFetch(() => ({ body: boc('1.4113') }))
     expect(await fetchFxToCad('USD', fetchImpl)).toBeCloseTo(1.4113, 10)
@@ -90,6 +136,13 @@ describe('refreshing a portfolio', () => {
       ? { body: boc('1.40') }
       : { body: { status: 'error', code: 401, message: 'Invalid API key' } }))
     const result = await refreshQuotes(['A', 'B', 'C'], 'twelvedata', 'bad', { fetchImpl, delayMs: 0 })
+    expect(calls.filter(u => !u.includes('bankofcanada'))).toHaveLength(1)
+    expect(Object.keys(result.errors)).toEqual(['A', 'B', 'C'])
+  })
+
+  it('stops early when the Yahoo path is not forwarded', async () => {
+    const { fetchImpl, calls } = mockFetch(url => (url.includes('bankofcanada') ? { body: boc('1.40') } : { body: {} }))
+    const result = await refreshQuotes(['A', 'B', 'C'], 'yahoo', '', { fetchImpl, delayMs: 0 })
     expect(calls.filter(u => !u.includes('bankofcanada'))).toHaveLength(1)
     expect(Object.keys(result.errors)).toEqual(['A', 'B', 'C'])
   })

@@ -15,6 +15,19 @@ function getGitSha(): string {
   }
 }
 
+// Yahoo Finance quotes go through the app's own server (see
+// src/lib/market/quotes.ts); docker/nginx.conf does the same in production.
+const yahooProxy = {
+  '/api/yahoo/v8/finance/chart/': {
+    target: 'https://query1.finance.yahoo.com',
+    changeOrigin: true,
+    // Same honest client identifier as docker/nginx.conf, not the visitor's
+    // browser User-Agent.
+    headers: { 'User-Agent': 'RetireEh (+https://github.com/Kombatant/retire-eh-reloaded)' },
+    rewrite: (p: string) => p.replace(/^\/api\/yahoo/, ''),
+  },
+}
+
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
@@ -22,6 +35,8 @@ export default defineConfig({
       '@': path.resolve(import.meta.dirname, './src'),
     },
   },
+  server: { proxy: yahooProxy },
+  preview: { proxy: yahooProxy },
   define: {
     __APP_VERSION__: JSON.stringify(getGitSha()),
   },
