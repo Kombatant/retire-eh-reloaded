@@ -48,6 +48,7 @@ The application is 100% pure TypeScript (React + Vite). All calculations run cli
   - When a plan misses the goal or the success target, the trade-offs include downsizing or selling the principal residence, from the latest age to the earliest (`homeSaleLevers`). Selling outright adds an estimated rent to the budget, so it is only offered in detailed mode.
   - The verdict and guideline come from `planGoalOutlook` (`src/lib/insights/outlook.ts`), which the Dashboard also uses through `usePlanOutlook`, so both give the same answer.
   - Retirement timing (`src/lib/insights/retirementTiming.ts`) scores a range of retirement ages the same way, in its own worker through `useRetirementTiming`. All ages are scored up front so the slider needs no recalculation. "Safe" means the success target and the funding verdict are both met, at that age and every later age tested.
+  - A second slider changes recurring spending (`SPENDING_STEPS_PCT`). Spending levels are scored only for the age on screen (`runSpendingAtAgeJob`, its own worker through `useSpendingAtAge`, cached per age), since every age × level up front would take over a minute. `timingChanges` builds the changes for both sliders, so what is shown is what gets applied. `usePlanJob` takes an optional input for jobs like this.
 - **Original engine** (`src/lib/legacy/`): kept only as the reference for `src/test/sim-parity.test.ts`.
 
 ## GitHub Actions
@@ -87,7 +88,7 @@ A grouped sidebar (a drawer on small screens) with hash routes. Each page shows 
 | | Cash flow | `#/cashflow/<flow\|table>` | Yearly Sankey, year-by-year table with column presets and CSV export |
 | | Taxes | `#/taxes/<retirement\|by-year\|brackets>` | Tax at retirement, tax by year, bracket room |
 | | Risk | `#/risk/<monte-carlo\|historical\|stress>` | Success KPIs; fan chart, historical backtest, stress tests; how the failing runs fail and what would fix them |
-| | Proposals | `#/proposals` | When it's safest to retire, with a slider to try other ages; changes tested against the current plan: best combination, free changes, trade-offs or room to spare; try as a new plan or apply with undo |
+| | Proposals | `#/proposals` | When it's safest to retire, with sliders to try other ages and spending levels; changes tested against the current plan: best combination, free changes, trade-offs or room to spare; try as a new plan or apply with undo |
 | Tools | Compare | `#/compare` | 2–3 saved plans side by side |
 | | Tracking | `#/tracking` | Dated balance snapshots, actual vs. projected by day, rebaseline |
 | — | Learn | `#/learn/<topic>` | Methodology articles |
@@ -156,7 +157,7 @@ Provider order in `App.tsx`: ThemeProvider › ToastProvider › RouteProvider �
 - `insights`, `outlook`: Sankey, CSV, FI metrics, milestones, comparison, brackets; goal outlook, income sources, money-lasts.
 - `spending-levels`: the yearly amounts compared, that a level matches changing the budget, and the most a plan can spend.
 - `proposals`: applying changes, which proposals are offered, and that a proposal's numbers match applying it.
-- `retirement-timing`: the range of ages tested, the earliest safe age, and that a tested age's numbers match applying it.
+- `retirement-timing`: the range of ages tested, the earliest safe age, spending levels at an age and the most that is safe, and that a tested point's numbers match applying it.
 - `cpp-history`: CPP/QPP estimate from work history.
 - `sim-stocks`, `stock-quotes`: stock holdings, RSU/ESPP, sell plans, scenarios, quote providers (mocked fetch).
 - `route`, `advanced-settings`, `ui-primitives`: hash routes, Essentials/Advanced detection, Sheet/SegmentedControl/SubTabs/NumberInput/Field.

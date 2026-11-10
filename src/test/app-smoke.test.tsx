@@ -74,7 +74,16 @@ describe('App smoke test', () => {
     fireEvent.change(slider, { target: { value: String(next) } })
     expect((slider as HTMLInputElement).value).toBe(String(next))
     expect(screen.queryByText(/Something went wrong/i)).toBeNull()
-  }, 30_000)
+
+    const spending = screen.getByRole('slider', { name: 'Change in yearly spending to try' })
+    fireEvent.change(spending, { target: { value: '0' } })
+    expect(await screen.findByText(/30% less than your plan/)).toBeInTheDocument()
+    // Each spending level is scored on its own, so the result arrives after a test run.
+    expect(await screen.findByText(/Spend 30% less/, {}, { timeout: 20_000 })).toBeInTheDocument()
+    expect(await screen.findByText(/Safe at this age|isn’t safe at this age|Still safe at/, {}, { timeout: 20_000 })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Back to your plan' }))
+    expect(screen.getByText('Your plan as it is')).toBeInTheDocument()
+  }, 40_000)
 
   it('explains how a failing plan fails and what would fix it', async () => {
     const base = createDefaultPlan(new Date())

@@ -1,4 +1,4 @@
-import { Monitor, Moon, Sun } from 'lucide-react'
+import { ExternalLink, GitCommitHorizontal, Monitor, Moon, Palette, SlidersHorizontal, Sun } from 'lucide-react'
 import { useRoute } from '@/contexts/RouteContext'
 import { useTheme, type ThemeMode } from '@/contexts/ThemeContext'
 import { useDetailLevel } from '@/hooks/useDetailLevel'
@@ -94,32 +94,46 @@ const THEME_OPTIONS: { value: ThemeMode; label: React.ReactNode; title: string }
   { value: 'system', label: <Monitor className="h-3.5 w-3.5" aria-label="System" />, title: 'Match system theme' },
 ]
 
+// Docker builds pass the full commit hash; seven characters identify it.
+const displayVersion = (v: string) => (/^[0-9a-f]{8,}$/i.test(v) ? v.slice(0, 7) : v)
+
 function SidebarFooter() {
   const { mode, setMode } = useTheme()
   const { isAdvanced, setDetailLevel } = useDetailLevel()
 
   return (
-    <div className="space-y-3 border-t border-border px-4 py-4">
-      <Switch
-        checked={isAdvanced}
-        onChange={(on) => setDetailLevel(on ? 'advanced' : 'essentials')}
-        label="Advanced mode"
-        description="Show every input and analysis option"
-      />
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-sm text-fg">Theme</span>
-        <SegmentedControl ariaLabel="Theme" size="sm" value={mode} onChange={setMode} options={THEME_OPTIONS} />
+    <div className="border-t border-border p-3">
+      <div className="divide-y divide-border rounded-lg border border-border bg-surface-muted/50">
+        <div className="flex items-start gap-2.5 px-3 py-2.5">
+          <SlidersHorizontal className="mt-0.5 h-4 w-4 shrink-0 text-fg-muted" aria-hidden />
+          <Switch
+            className="min-w-0 flex-1"
+            checked={isAdvanced}
+            onChange={(on) => setDetailLevel(on ? 'advanced' : 'essentials')}
+            label="Advanced mode"
+            description="Every input and analysis"
+          />
+        </div>
+        <div className="flex items-center gap-2.5 px-3 py-2">
+          <Palette className="h-4 w-4 shrink-0 text-fg-muted" aria-hidden />
+          <span className="flex-1 text-sm text-fg">Theme</span>
+          <SegmentedControl ariaLabel="Theme" size="sm" value={mode} onChange={setMode} options={THEME_OPTIONS} />
+        </div>
       </div>
-      <div className="flex items-center justify-between pt-1 text-xs text-fg-muted">
+      <div className="mt-2 flex items-center justify-between gap-2 px-1 text-xs text-fg-muted">
         <a
           href="https://github.com/Kombatant/retire-eh-reloaded"
           target="_blank"
           rel="noopener noreferrer"
-          className="hover:text-fg"
+          className="inline-flex min-h-[32px] items-center gap-1 hover:text-fg"
         >
-          Source on GitHub
+          Source code
+          <ExternalLink className="h-3 w-3" aria-hidden />
         </a>
-        <span title="Build">{__APP_VERSION__}</span>
+        <span className="inline-flex items-center gap-1 font-mono text-[11px]" title={`Build ${__APP_VERSION__}`}>
+          <GitCommitHorizontal className="h-3.5 w-3.5" aria-hidden />
+          {displayVersion(__APP_VERSION__)}
+        </span>
       </div>
     </div>
   )

@@ -279,7 +279,7 @@ describe('how failing runs fail', () => {
   })
 
   it('orders fixes by whether they reach the target, then by cost', () => {
-    const score = (successRate: number): PlanScore => ({ successRate, onTrack: true, funded: true, goalProgressPct: 100, lifetimeTax: 0, afterTaxEstate: 0, averageIncome: 0 })
+    const score = (successRate: number): PlanScore => ({ successRate, onTrack: true, funded: true, goalProgressPct: 100, lifetimeTax: 0, afterTaxEstate: 0, averageIncome: 0, spending: 0 })
     const make = (id: string, group: Proposal['group'], rate: number): Proposal => ({ id, group, title: id, detail: '', changes: [], score: score(rate) })
     const fixes = fixesForRisk([
       make('closest', 'tradeoff', 0.85),

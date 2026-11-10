@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { planSchema, type PlanV2, type PlanV2Input } from '@/lib/plan/schema'
 import { applyChanges, runProposalJob, type ProposalUpdate } from '@/lib/insights/proposals'
-import { runRetirementTimingJob, type RetirementTiming, type RetirementTimingUpdate } from '@/lib/insights/retirementTiming'
+import {
+  findHighestSafeIndex, runRetirementTimingJob, runSpendingAtAgeJob, SPENDING_STEPS_PCT, timingChanges,
+  type RetirementTiming, type RetirementTimingUpdate, type SpendingAtAge, type SpendingAtAgeUpdate,
+} from '@/lib/insights/retirementTiming'
 
 const YEAR = 2026
 const person = (id: string, age: number, retirementAge: number, extra: object = {}) => ({
@@ -99,5 +102,62 @@ describe('runRetirementTimingJob', { timeout: 120_000 }, () => {
     let updates = 0
     await runRetirementTimingJob(plan(72_000), YEAR, () => { updates++ }, { maxRuns: 10, shouldStop: () => updates > 1 })
     expect(updates).toBe(2)
+  })
+})
+
+async function spendingJob(p: PlanV2, shift: number, maxRuns = 40): Promise<{ result: SpendingAtAge; updates: SpendingAtAgeUpdate[] }> {
+  const updates: SpendingAtAgeUpdate[] = []
+  await runSpendingAtAgeJob(p, YEAR, update => { updates.push(update) }, { maxRuns }, { shift })
+  expect(updates.at(-1)!.done).toBe(true)
+  return { result: updates.at(-1)!.result, updates }
+}
+
+describe('runSpendingAtAgeJob', { timeout: 120_000 }, () => {
+  it('scores the plan’s own spending exactly as the age slider does', async () => {
+    const p = plan(72_000)
+    const timing = (await job(p))!
+    const option = timing.options[timing.currentIndex - 2]
+    const { result } = await spendingJob(p, option.shift)
+    expect(result.shift).toBe(option.shift)
+    expect(result.options[SPENDING_STEPS_PCT.indexOf(0)]!.score).toEqual(option.score)
+  })
+
+  it('shows exactly what applying an age and a spending change produces', async () => {
+    const p = plan(72_000)
+    const { result } = await spendingJob(p, -3)
+    const i = SPENDING_STEPS_PCT.indexOf(-15)
+    const applied = planSchema.parse(applyChanges(p, timingChanges(-3, -15), YEAR))
+    const again = await spendingJob(applied, 0)
+    expect(again.result.options[SPENDING_STEPS_PCT.indexOf(0)]!.score).toEqual(result.options[i]!.score)
+  })
+
+  it('makes an unsafe earlier age safe by spending less', async () => {
+    const p = plan(72_000)
+    const timing = (await job(p))!
+    const unsafe = timing.options.find(o => !o.safe && o.shift < 0)!
+    const { result } = await spendingJob(p, unsafe.shift)
+    expect(result.options[SPENDING_STEPS_PCT.indexOf(0)]!.safe).toBe(false)
+    expect(result.highestSafeIndex).not.toBeNull()
+    expect(SPENDING_STEPS_PCT[result.highestSafeIndex!]).toBeLessThan(0)
+    expect(result.options.slice(0, result.highestSafeIndex! + 1).every(o => o!.safe)).toBe(true)
+    // Less spending never costs income to spare: the score's own spending follows the slider.
+    const spendings = result.options.map(o => o!.score.spending)
+    expect(spendings).toEqual([...spendings].sort((a, b) => a - b))
+  })
+
+  it('tests levels nearest the plan first and names the limit only when done', async () => {
+    const { updates } = await spendingJob(plan(72_000), 0, 10)
+    expect(updates).toHaveLength(SPENDING_STEPS_PCT.length)
+    const first = updates[0].result.options.findIndex(o => o !== null)
+    expect(SPENDING_STEPS_PCT[first]).toBe(0)
+    expect(updates.slice(0, -1).every(u => u.result.highestSafeIndex === null)).toBe(true)
+  })
+
+  it('reads the safe limit up from the lowest level, stopping at the first failure', () => {
+    const at = (...safe: boolean[]) => findHighestSafeIndex(safe.map(s => ({ safe: s })))
+    expect(at(true, true, false, true)).toBe(1)
+    expect(at(false, true, true)).toBeNull()
+    expect(at(true, true, true)).toBe(2)
+    expect(findHighestSafeIndex([{ safe: true }, null, { safe: true }])).toBe(0)
   })
 })

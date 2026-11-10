@@ -5,7 +5,7 @@ import { planPath } from '@/lib/sim/paths/deterministic'
 import { runMonteCarloBatch, settingsFromPlan, successIsMeaningful } from '@/lib/sim/risk'
 import { TARGET_SUCCESS } from '@/lib/sim/funding'
 import { planMetrics } from './compare'
-import { planGoalOutlook } from './outlook'
+import { guidelineSpending, planGoalOutlook } from './outlook'
 import { money } from '@/lib/formatting'
 
 // Proposals: changes to a plan, each tested by re-running the whole plan with
@@ -48,6 +48,8 @@ export interface PlanScore {
   lifetimeTax: number
   afterTaxEstate: number
   averageIncome: number
+  // Recurring spending in the first retirement year, today's dollars.
+  spending: number
 }
 
 export type ProposalGroup = 'combo' | 'free' | 'tradeoff' | 'spare'
@@ -371,6 +373,7 @@ export function createScorer(plan: PlanV2, startYear: number, maxRuns = PROPOSAL
       lifetimeTax: metrics.lifetimeTax,
       afterTaxEstate: metrics.afterTaxEstate,
       averageIncome: metrics.averageRetirementIncome,
+      spending: guidelineSpending(c, result),
     }
   }
   return { score, runs }

@@ -1102,7 +1102,7 @@ describe('one verdict', () => {
   })
 
   it('does not call a zero change an improvement', () => {
-    const score: PlanScore = { successRate: null, onTrack: true, funded: true, goalProgressPct: 100, lifetimeTax: 0, afterTaxEstate: 0, averageIncome: 0 }
+    const score: PlanScore = { successRate: null, onTrack: true, funded: true, goalProgressPct: 100, lifetimeTax: 0, afterTaxEstate: 0, averageIncome: 0, spending: 0 }
     expect(isImprovement(score, score)).toBe(false)
     expect(isImprovement({ ...score, averageIncome: 100 }, { ...score, averageIncome: 100 })).toBe(false)
     expect(isImprovement({ ...score, averageIncome: 100 }, { ...score, averageIncome: 102 })).toBe(true)
