@@ -100,6 +100,9 @@ export function AssumptionsSection() {
             <Field label="Cash">
               <PercentInput value={r.cashPct} min={-10} max={30} onChange={(v) => setReturns({ cashPct: v })} />
             </Field>
+            <Field label="Investment fees, per year" info="Taken off these asset-class returns and historical replays. The investment return above is already after fees.">
+              <PercentInput value={activePlan.assumptions.feePct} min={0} max={10} onChange={(v) => updateActivePlan(p => patchAssumptions(p, { feePct: v }))} />
+            </Field>
           </div>
         </Card>
       </Advanced>

@@ -23,15 +23,31 @@ function accountAllocation(a: AccountGrowth): CompiledAccount['allocation'] {
 
 function accountExpectedReturn(a: AccountGrowth, plan: PlanV2): number {
   if (a.returnOverridePct !== undefined) return a.returnOverridePct
+  const fee = plan.assumptions.feePct
   if (a.allocation) {
     const r = plan.assumptions.assetReturns
     const total = a.allocation.equity + a.allocation.bond + a.allocation.cash
     if (total > 0) {
-      return (a.allocation.equity * r.equityPct + a.allocation.bond * r.bondPct + a.allocation.cash * r.cashPct) / total
+      return (a.allocation.equity * r.equityPct + a.allocation.bond * r.bondPct + a.allocation.cash * r.cashPct) / total - fee
     }
   }
-  if (a.type === 'CASH') return plan.assumptions.assetReturns.cashPct
+  if (a.type === 'CASH') return plan.assumptions.assetReturns.cashPct - fee
   return plan.assumptions.expectedReturn
+}
+
+// Days from `asOf` to the next January 1, as a share of that year. Worked out
+// from the date's parts so no time zone can move it. A date from another year
+// keeps today's behaviour; a stale-date diagnostic reports it.
+export function firstPeriodFraction(asOf: string, startYear: number): number {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(asOf)
+  if (!match) return 1
+  const [year, month, day] = match.slice(1).map(Number)
+  if (year !== startYear) return 1
+  const fromDate = Date.UTC(year, month - 1, day)
+  const yearStart = Date.UTC(year, 0, 1)
+  const nextYear = Date.UTC(year + 1, 0, 1)
+  if (!Number.isFinite(fromDate) || fromDate < yearStart || fromDate >= nextYear) return 1
+  return (nextYear - fromDate) / (nextYear - yearStart)
 }
 
 export interface CompileOptions {
@@ -59,6 +75,7 @@ export function compilePlan(plan: PlanV2, { startYear, rules = 'v2' }: CompileOp
     rrspRoom: p.room?.rrsp,
     tfsaRoom: p.room?.tfsa,
     fhsaRoom: p.room?.fhsa,
+    pensionAdjustment: p.pensionAdjustment ?? 0,
     fhsaLifetimeRoom: Math.max(0, TAX_2026.limits.fhsaLifetime - plan.accounts.reduce(
       (total, a) => total + (a.type === 'FHSA' && a.ownerId === p.id ? a.lifetimeContributed : 0), 0)),
   }))
@@ -119,6 +136,7 @@ export function compilePlan(plan: PlanV2, { startYear, rules = 'v2' }: CompileOp
           }
         : NO_YIELDS,
       interestOnly: a.type === 'CASH',
+      excessAccount: -1,
       rrifConversionAge: a.type === 'RRSP' ? a.rrifConversionAge : undefined,
       openedYear: a.type === 'FHSA' ? a.openedYear : undefined,
       lockedInJurisdiction: a.type === 'LIRA' || a.type === 'LIF'
@@ -186,8 +204,8 @@ export function compilePlan(plan: PlanV2, { startYear, rules = 'v2' }: CompileOp
     }
   })
 
-  const syntheticAccount = (id: string, type: 'TFSA' | 'NONREG', ownerIndex: number): CompiledAccount => ({
-    id, type, ownerIndex, taxable: false, initialBalance: 0, contributions: [], synthetic: true,
+  const syntheticAccount = (id: string, type: 'TFSA' | 'NONREG' | 'RRSP', ownerIndex: number): CompiledAccount => ({
+    id, type, ownerIndex, taxable: type === 'RRSP', initialBalance: 0, contributions: [], synthetic: true, excessAccount: -1,
     expectedReturnPct: plan.assumptions.expectedReturn, nonRegistered: type === 'NONREG' && rules === 'v2',
     deductible: false, initialAcb: 0, yields: NO_YIELDS, interestOnly: false,
     orderRank: orderRank(type),
@@ -257,11 +275,14 @@ export function compilePlan(plan: PlanV2, { startYear, rules = 'v2' }: CompileOp
     // when the projection's first year moves forward.
     if (stream.frequency === 'oneTime' && offsetOf(stream.from, 0) < 0) return []
     const flow = incomeFlow(stream, offsetOf, years)
+    // Rent stops when the property it comes from is sold.
+    const rentedOut = stream.propertyId ? plan.properties.find(p => p.id === stream.propertyId) : undefined
+    if (stream.kind === 'rental' && rentedOut?.sale) flow.endOffset = Math.min(flow.endOffset, offsetOf(rentedOut.sale.at, years))
     const isRsu = stream.kind === 'rsu' && rules === 'v2'
     const deposit = rules === 'v2' && stream.frequency === 'oneTime' && !isRsu ? depositAccountFor(owner) : -1
     const survivorFraction = stream.kind === 'dbPension' && rules === 'v2' ? (stream.db?.survivorPct ?? 60) / 100 : 0
     const compiled: CompiledIncome[] = [{
-      personIndex: owner, kind: stream.kind, taxTreatment: stream.taxTreatment, flow, depositAccount: deposit, survivorFraction,
+      personIndex: owner, kind: stream.kind, taxTreatment: stream.taxTreatment, flow, depositAccount: deposit, oneTime: stream.frequency === 'oneTime', survivorFraction,
       rsu: isRsu ? rsuTarget(stream, owner) : undefined,
     }]
     // A DB bridge benefit is paid on top of the lifetime pension until the
@@ -270,12 +291,40 @@ export function compilePlan(plan: PlanV2, { startYear, rules = 'v2' }: CompileOp
     if (rules === 'v2' && bridge && bridge.amount > 0) {
       const bridgeEnd = people[owner].birthYear + bridge.untilAge - startYear
       compiled.push({
-        personIndex: owner, kind: 'dbPension', taxTreatment: stream.taxTreatment, depositAccount: -1, survivorFraction: 0,
+        personIndex: owner, kind: 'dbPension', taxTreatment: stream.taxTreatment, depositAccount: -1, oneTime: false, survivorFraction: 0,
         flow: { ...flow, amount: bridge.amount, endOffset: Math.min(flow.endOffset, bridgeEnd), indexFracInPayment: flow.indexFracInPayment },
       })
     }
     return compiled
   })
+
+  // An FHSA must end by the earliest of its 15th year, the year its holder turns
+  // 71 and the year after a qualifying withdrawal (CRA). What is left rolls into
+  // the holder's RRSP, without using RRSP room.
+  if (rules === 'v2') {
+    plan.accounts.forEach((a, i) => {
+      if (a.type !== 'FHSA' || accounts[i].ownerIndex < 0) return
+      const owner = accounts[i].ownerIndex
+      const openedYear = a.openedYear ?? startYear
+      const deadlines = [openedYear + 15, people[owner].birthYear + 71, ...(a.homePurchaseYear !== undefined ? [a.homePurchaseYear + 1] : [])]
+      let rolloverAccount = accounts.findIndex(x => x.ownerIndex === owner && x.type === 'RRSP')
+      if (rolloverAccount < 0) {
+        accounts.push(syntheticAccount(`${people[owner].id}-fhsa-rollover`, 'RRSP', owner))
+        rolloverAccount = accounts.length - 1
+      }
+      accounts[i].fhsa = { closureYear: Math.min(...deadlines), homePurchaseYear: a.homePurchaseYear, rolloverAccount }
+    })
+  }
+
+  // Contributions over the owner's room are invested as non-registered instead.
+  if (rules === 'v2') {
+    for (let i = 0, n = accounts.length; i < n; i++) {
+      const a = accounts[i]
+      if ((a.type === 'RRSP' || a.type === 'TFSA') && a.ownerIndex >= 0 && a.contributions.some(flow => flow.amount > 0)) {
+        a.excessAccount = depositAccountFor(a.ownerIndex)
+      }
+    }
+  }
 
   const expenses: CompiledExpense[] = plan.expenses.items.map(item => ({
     id: item.id,
@@ -313,6 +362,7 @@ export function compilePlan(plan: PlanV2, { startYear, rules = 'v2' }: CompileOp
     balance: d.balance,
     annualRate: d.interestRatePct / 100,
     monthlyPayment: d.monthlyPayment,
+    rateCompounding: d.rateCompounding ?? 'monthly',
     propertyIndex: d.propertyId ? (propertyIndex.get(d.propertyId) ?? -1) : -1,
   }))
 
@@ -325,7 +375,7 @@ export function compilePlan(plan: PlanV2, { startYear, rules = 'v2' }: CompileOp
   // salary in its final year, in plan-start dollars.
   const inflation = plan.assumptions.inflationRate / 100
   const finalSalaries = people.reduce((total, _person, idx) => {
-    const stream = incomes.find(i => i.personIndex === idx && i.kind === 'employment' && i.flow.everyN === 1 && i.flow.endOffset - i.flow.startOffset > 1)
+    const stream = incomes.find(i => i.personIndex === idx && i.kind === 'employment' && !i.oneTime && i.flow.endOffset > i.flow.startOffset)
     if (!stream) return total
     const n = Math.max(0, Math.min(stream.flow.endOffset, years) - 1)
     const grown = stream.flow.amount * Math.pow(1 + stream.flow.ratePct / 100, n)
@@ -345,10 +395,13 @@ export function compilePlan(plan: PlanV2, { startYear, rules = 'v2' }: CompileOp
   }
 
   const strategy = plan.drawdown.strategy
+  const firstPeriod = rules === 'v2' ? firstPeriodFraction(plan.asOf, startYear) : 1
   return {
     rules,
     startYear,
     years,
+    firstPeriodFraction: firstPeriod,
+    headlineOffset: drawdownStartOffset === 0 && firstPeriod < 1 && years > 1 ? 1 : drawdownStartOffset,
     drawdownStartOffset,
     people,
     accounts,
@@ -357,6 +410,7 @@ export function compilePlan(plan: PlanV2, { startYear, rules = 'v2' }: CompileOp
     expenses,
     expenseMode: rules === 'v2' ? plan.expenses.mode : 'simple',
     replacementRate: plan.expenses.replacementRate / 100,
+    survivorSpending: rules === 'v2' ? plan.expenses.survivorSpendingPct / 100 : 1,
     surplusPolicy: plan.expenses.surplusPolicy,
     phases,
     properties: rules === 'v2' ? properties : [],
@@ -364,10 +418,11 @@ export function compilePlan(plan: PlanV2, { startYear, rules = 'v2' }: CompileOp
     savingsAccount,
     reinvestAccount,
     expectedRealReturn: (1 + plan.assumptions.expectedReturn / 100) / (1 + inflation) - 1,
+    feePct: plan.assumptions.feePct,
     assetReturnsPct: {
-      equity: plan.assumptions.assetReturns.equityPct,
-      bond: plan.assumptions.assetReturns.bondPct,
-      cash: plan.assumptions.assetReturns.cashPct,
+      equity: plan.assumptions.assetReturns.equityPct - plan.assumptions.feePct,
+      bond: plan.assumptions.assetReturns.bondPct - plan.assumptions.feePct,
+      cash: plan.assumptions.assetReturns.cashPct - plan.assumptions.feePct,
     },
     strategy: rules === 'v2' && strategy.kind === 'expenses' ? 'expenses' : 'initialPct',
     spendingStrategy: rules === 'v2' ? strategy : { kind: 'initialPct', ratePct: strategy.kind === 'initialPct' ? strategy.ratePct : 4 },
@@ -376,7 +431,7 @@ export function compilePlan(plan: PlanV2, { startYear, rules = 'v2' }: CompileOp
     rrifUseYoungerSpouseAge: plan.drawdown.rrifUseYoungerSpouseAge,
     meltdown: rules === 'v2' ? plan.drawdown.meltdown : { enabled: false, targetTaxableIncome: 0 },
     probate: plan.estate.probate,
-    simpleSpendingTarget: finalSalaries * (plan.expenses.replacementRate / 100),
+    simpleSpendingTarget: plan.expenses.incomeTarget ?? finalSalaries * (plan.expenses.replacementRate / 100),
     initialWithdrawalRatePct: strategy.kind === 'initialPct' ? strategy.ratePct
       : strategy.kind === 'pctPortfolio' ? strategy.ratePct
         : strategy.kind === 'guytonKlinger' ? strategy.initialRatePct

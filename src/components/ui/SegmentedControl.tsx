@@ -61,7 +61,7 @@ export function SegmentedControl<T extends string>({
             className={cn(
               'whitespace-nowrap rounded-md font-medium transition-colors',
               fill && 'min-w-0 flex-1 basis-0',
-              size === 'sm' ? 'h-7 px-2.5 text-xs' : 'h-8 px-3 text-[13px]',
+              size === 'sm' ? 'h-10 px-2.5 text-xs' : 'h-10 px-3 text-[13px]',
               selected
                 ? 'bg-surface text-fg shadow-[0_1px_2px_rgba(16,24,40,0.1)] ring-1 ring-border'
                 : 'text-fg-muted hover:text-fg',

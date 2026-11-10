@@ -1,8 +1,8 @@
 import { STOCK_SCENARIOS, type PlanV2, type StockScenario } from '@/lib/plan/schema'
 import { compilePlan } from '@/lib/sim/compile'
 import { simulate } from '@/lib/sim/simulate'
-import { deterministicPath } from '@/lib/sim/paths/deterministic'
-import { runSucceeded } from '@/lib/sim/risk'
+import { planPath } from '@/lib/sim/paths/deterministic'
+import { evaluateFunding } from '@/lib/sim/funding'
 
 export interface StockOutcome {
   stockAtRetirement: number // real
@@ -31,20 +31,21 @@ export function hasSalePlan(plan: PlanV2): boolean {
 
 function outcome(plan: PlanV2, startYear: number): StockOutcome {
   const c = compilePlan(plan, { startYear })
-  const result = simulate(c, deterministicPath(c.years, c.expectedReturnPct, c.inflationPct))
+  const result = simulate(c, planPath(c))
   const rows = result.rows
   const atRetirement = rows[Math.min(c.drawdownStartOffset, rows.length - 1)]
-  const short = rows.find(r => r.shortfall > Math.max(100 * r.cpi, 0.01 * (r.withdrawal + r.shortfall)))
+  const funding = evaluateFunding(c, result)
   const last = rows[rows.length - 1]
   const estate = result.estate
   return {
-    stockAtRetirement: atRetirement.stockValue / atRetirement.cpiEnd,
+    // At the start of the retirement year, like every other "at retirement" figure.
+    stockAtRetirement: c.accounts.reduce((s, a, i) => s + (a.stock ? atRetirement.balancesStart[i] : 0), 0) / atRetirement.cpi,
     stockAtEnd: last.stockValue / last.cpiEnd,
     totalSales: rows.reduce((s, r) => s + r.stockSales / r.cpi, 0),
     realizedGains: rows.reduce((s, r) => s + r.realizedGains / r.cpi, 0),
     lifetimeTax: rows.reduce((s, r) => s + r.tax / r.cpi, 0) + (estate ? estate.finalReturnTax / estate.cpi : 0),
-    success: runSucceeded(result),
-    firstShortfallYear: short ? short.year : null,
+    success: funding.funded,
+    firstShortfallYear: funding.firstShortfall?.year ?? null,
     afterTaxEstate: estate ? estate.afterTaxEstate / estate.cpi : 0,
   }
 }

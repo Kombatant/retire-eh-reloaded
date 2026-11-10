@@ -1,5 +1,6 @@
 import historical from '@/data/historical/canada-annual.json'
 import type { CompiledPlan, MarketPath } from '../types'
+import { scaleFirstPeriod } from './deterministic'
 
 export interface HistoricalYear {
   year: number
@@ -48,10 +49,58 @@ export function historicalPath(c: CompiledPlan, startIndex: number, mix: Mix, da
     inflation[t] = y.inflation
     nominalReturn[t] = (mix.equity * y.equity + mix.bond * y.bond + mix.cash * y.cash) / total
   }
-  return {
+  // A partial first year uses a share of that year's return: an approximation,
+  // since history has no record of how the rest of it would have gone.
+  const path: MarketPath = {
     nominalReturn, inflation, assets: { equity, bond, cash },
     stocks: stockSeries(c, equity, t => equity[t] - HISTORICAL_EQUITY_MEAN),
   }
+  return scaleFirstPeriod(afterFees(c, path, 0, years), c.firstPeriodFraction)
+}
+
+// Historical returns are before fees; a plan's expected returns are after them.
+function afterFees(c: CompiledPlan, path: MarketPath, from: number, to: number): MarketPath {
+  const fee = c.feePct / 100
+  if (fee <= 0) return path
+  const lower = (series: Float64Array) => { for (let t = from; t < to; t++) series[t] -= fee }
+  lower(path.nominalReturn)
+  if (path.assets) {
+    lower(path.assets.equity)
+    lower(path.assets.bond)
+    lower(path.assets.cash)
+  }
+  return path
+}
+
+// Expected returns while working, then history starting from the first
+// retirement year. Isolates sequence risk: a real start-of-retirement replay.
+export function retirementAnchoredPath(c: CompiledPlan, startIndex: number, mix: Mix, data: HistoricalYear[] = HISTORICAL_DATA): MarketPath {
+  const years = c.years
+  const n = data.length
+  const D = c.drawdownStartOffset
+  const total = mix.equity + mix.bond + mix.cash || 1
+  const path: MarketPath = {
+    nominalReturn: new Float64Array(years).fill(c.expectedReturnPct / 100),
+    inflation: new Float64Array(years).fill(c.inflationPct / 100),
+    assets: {
+      equity: new Float64Array(years).fill(c.assetReturnsPct.equity / 100),
+      bond: new Float64Array(years).fill(c.assetReturnsPct.bond / 100),
+      cash: new Float64Array(years).fill(c.assetReturnsPct.cash / 100),
+    },
+  }
+  const shocked = new Float64Array(years)
+  const fee = c.feePct / 100
+  for (let t = D; t < years; t++) {
+    const y = data[(startIndex + t - D) % n]
+    path.assets!.equity[t] = y.equity - fee
+    path.assets!.bond[t] = y.bond - fee
+    path.assets!.cash[t] = y.cash - fee
+    path.inflation[t] = y.inflation
+    path.nominalReturn[t] = (mix.equity * y.equity + mix.bond * y.bond + mix.cash * y.cash) / total - fee
+    shocked[t] = y.equity - HISTORICAL_EQUITY_MEAN
+  }
+  path.stocks = stockSeries(c, path.assets!.equity, t => shocked[t])
+  return scaleFirstPeriod(path, c.firstPeriodFraction)
 }
 
 // Expected returns everywhere except a historical sequence replayed from
@@ -76,15 +125,16 @@ export function overlayPath(c: CompiledPlan, atOffset: number, fromYear: number,
     const t = atOffset + i
     const y = HISTORICAL_DATA[start + i]
     if (t < 0 || t >= years || !y) continue
-    path.assets!.equity[t] = y.equity
-    path.assets!.bond[t] = y.bond
-    path.assets!.cash[t] = y.cash
+    const fee = c.feePct / 100
+    path.assets!.equity[t] = y.equity - fee
+    path.assets!.bond[t] = y.bond - fee
+    path.assets!.cash[t] = y.cash - fee
     path.inflation[t] = y.inflation
-    path.nominalReturn[t] = (mix.equity * y.equity + mix.bond * y.bond + mix.cash * y.cash) / total
+    path.nominalReturn[t] = (mix.equity * y.equity + mix.bond * y.bond + mix.cash * y.cash) / total - fee
     shocked[t] = y.equity - HISTORICAL_EQUITY_MEAN
   }
   path.stocks = stockSeries(c, path.assets!.equity, t => shocked[t])
-  return path
+  return scaleFirstPeriod(path, c.firstPeriodFraction)
 }
 
 export const CRASH_SCENARIOS = [

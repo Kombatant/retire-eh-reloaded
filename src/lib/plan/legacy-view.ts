@@ -27,6 +27,7 @@ export function cppAmountAt65(person: PersonV2, salary = 0): number {
       typicalEarnings: person.cpp.typicalEarnings ?? salary,
       yearsNotWorking: person.cpp.yearsNotWorking,
       childRearingYears: person.cpp.childRearingYears,
+      province: person.province,
     }).amountAt65
   }
   return estimateCppAt65({
@@ -34,6 +35,7 @@ export function cppAmountAt65(person: PersonV2, salary = 0): number {
     contributoryYears: person.cpp.contributoryYears,
     birthYear: person.birthYear,
     retirementAge: person.retirementAge,
+    province: person.province,
   })
 }
 

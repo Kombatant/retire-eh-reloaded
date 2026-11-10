@@ -12,12 +12,12 @@ const variantClass: Record<Variant, string> = {
 }
 
 const sizeClass: Record<Size, string> = {
-  sm: 'h-8 px-3 text-[13px] gap-1.5',
+  sm: 'h-10 px-3 text-[13px] gap-1.5',
   md: 'h-10 px-4 text-sm gap-2',
 }
 
 const iconSizeClass: Record<Size, string> = {
-  sm: 'h-8 w-8',
+  sm: 'h-10 w-10',
   md: 'h-10 w-10',
 }
 

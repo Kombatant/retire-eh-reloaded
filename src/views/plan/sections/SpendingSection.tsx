@@ -109,6 +109,9 @@ export function SpendingSection() {
             >
               <PercentInput value={expenses.replacementRate} min={0} max={200} onChange={(v) => updateActivePlan(p => patchExpenses(p, { replacementRate: v }))} />
             </Field>
+            <Field label="Or an income target, per year" info="Before tax, in today's dollars. For people with no salary to take a percentage of. Used instead of the percentage when set." className="w-56">
+              <NumberInput value={expenses.incomeTarget ?? 0} min={0} onChange={(v) => updateActivePlan(p => patchExpenses(p, { incomeTarget: v > 0 ? v : undefined }))} />
+            </Field>
             <p className="pb-2.5 text-sm text-fg-secondary">
               ≈ <span className="font-semibold text-fg">{money(compiledPlan.simpleSpendingTarget)}</span> a year in today's dollars
             </p>
@@ -125,6 +128,11 @@ export function SpendingSection() {
               ? <EmptyState icon={Receipt} title="No expenses yet" description="Add your main costs: housing, food, transport, travel." />
               : <ListFrame>{recurring.map(rowFor)}</ListFrame>}
             <Advanced>
+              {activePlan.people.length === 2 && (
+                <Field label="Spending after the first death" info="Share of your spending items that continues for the survivor. Property costs, debts and one-time costs don't change. 100% is the cautious default." className="mb-3 w-56">
+                  <PercentInput value={expenses.survivorSpendingPct} min={0} max={100} onChange={(v) => updateActivePlan(p => patchExpenses(p, { survivorSpendingPct: v }))} />
+                </Field>
+              )}
               <Checkbox
                 checked={expenses.surplusPolicy === 'save'}
                 onChange={(on) => updateActivePlan(p => patchExpenses(p, { surplusPolicy: on ? 'save' : 'ignore' }))}

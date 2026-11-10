@@ -4,7 +4,7 @@ import { GoalProgress } from '@/components/GoalProgress'
 import type { RetirementOutlook } from '@/lib/insights/outlook'
 
 const outlook = (overrides: Partial<RetirementOutlook> = {}): RetirementOutlook => ({
-  onTrack: true, progressPct: 120, progressBasis: 'preTax', preTaxIncome: 64_000, afterTaxIncome: 55_000,
+  onTrack: true, needsTarget: false, progressPct: 120, progressBasis: 'preTax', preTaxIncome: 64_000, afterTaxIncome: 55_000,
   estimatedTax: 9_000, extraSavingsNeeded: 0, annualRoom: 4_000, noSavingsNeeded: false, metOnPaperOnly: false, propertySaleValue: 0,
   ...overrides,
 })

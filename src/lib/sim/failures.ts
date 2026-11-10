@@ -1,19 +1,15 @@
 import { householdBaseAge } from './legacyAdapter'
 import { quantile, sum } from './math'
 import { accountReturnAt } from './simulate'
+import { shortfallCause, yearFellShort } from './funding'
 import type { CompiledPlan, MarketPath, SimResult, YearRow } from './types'
 
 // Sequence risk is decided mostly in the first decade of retirement, so that
 // is the stretch whose markets get compared.
 export const EARLY_RETIREMENT_YEARS = 10
 const AGE_BUCKET_YEARS = 5
-// Balances below this (today's dollars) are treated as empty.
-const EMPTY_BALANCE = 1000
 
-// A year counts as short when the gap is more than rounding.
-export function yearFellShort(r: YearRow): boolean {
-  return r.shortfall > Math.max(100 * r.cpi, 0.01 * (r.withdrawal + r.shortfall))
-}
+export { yearFellShort } from './funding'
 
 export interface RunFailure {
   firstShortOffset: number
@@ -78,9 +74,7 @@ function describeFailure(c: CompiledPlan, rows: YearRow[]): RunFailure | null {
   const wholeBudget = c.expenseMode === 'detailed' && (kind === 'expenses' || kind === 'initialPct')
   const withBudget = short.filter(r => r.spending > 0)
   const annual = total / short.length
-  const moneyRemains = sum(first.balancesEnd) / first.cpiEnd > Math.max(EMPTY_BALANCE, annual)
-  // The strategy's own withdrawal was made in full, so nothing capped it.
-  const heldBackByStrategy = first.phase === 'drawdown' && wholeBudget && kind === 'initialPct' && first.withdrawalShortfall <= 100 * first.cpi
+  const cause = shortfallCause(c, first, annual)
   return {
     firstShortOffset: first.offset,
     shortYears: short.length,
@@ -89,7 +83,7 @@ function describeFailure(c: CompiledPlan, rows: YearRow[]): RunFailure | null {
     fundedShare: wholeBudget && withBudget.length > 0
       ? withBudget.reduce((s, r) => s + r.fundedSpending / r.spending, 0) / withBudget.length
       : null,
-    moneyLeft: moneyRemains ? (heldBackByStrategy ? 'strategy' : 'limits') : null,
+    moneyLeft: cause === 'savings' ? null : cause,
   }
 }
 

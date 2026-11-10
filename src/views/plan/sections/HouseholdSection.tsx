@@ -8,9 +8,10 @@ import { PROVINCES, type PersonV2, type ProvinceCode } from '@/lib/plan/schema'
 import { cppAmountAt65, primarySalary } from '@/lib/plan/legacy-view'
 import { estimateCppFromHistory } from '@/lib/benefits/cpp'
 import {
-  CPP_MIN_START_AGE, maxPensionStartAge, OAS_MAX_START_AGE, OAS_MIN_START_AGE, getCppIncomeAtAge, getOasIncomeAtAge,
+  CPP_MIN_START_AGE, maxPensionStartAge, OAS_MAX_START_AGE, OAS_MIN_START_AGE, getCppIncomeAtAge,
 } from '@/lib/calculations'
-import { OAS_MAX_ANNUAL_2026, provinceName } from '@/lib/tax'
+import { provinceName } from '@/lib/tax'
+import { oasAnnualAmount } from '@/lib/benefits/oas'
 import { newId } from '@/lib/plan/ids'
 import { money } from '@/lib/formatting'
 import { validateRetirementAge } from '@/lib/validation'
@@ -86,7 +87,7 @@ function PersonCard({ person }: { person: PersonV2 }) {
   const { updateActivePlan, nowYear } = usePlanStore()
   const update = usePersonUpdate(person.id)
   const currentAge = nowYear - person.birthYear
-  const retirementError = validateRetirementAge(person.retirementAge, currentAge)
+  const retirementError = validateRetirementAge(person.retirementAge)
 
   return (
     <Card>
@@ -109,7 +110,7 @@ function PersonCard({ person }: { person: PersonV2 }) {
           />
         </Field>
         <Field label="Retirement age" error={retirementError}>
-          <IntegerInput value={person.retirementAge} min={currentAge} max={100} onChange={(v) => update({ retirementAge: v })} />
+          <IntegerInput value={person.retirementAge} min={0} max={100} onChange={(v) => update({ retirementAge: v })} />
         </Field>
         <Field label="Plan to age" info="How long the plan must last. Planning to 95 is a common, cautious choice.">
           <IntegerInput value={person.lifeExpectancy} min={60} max={110} onChange={(v) => update({ lifeExpectancy: v })} />
@@ -146,6 +147,7 @@ function BenefitsCard({ person }: { person: PersonV2 }) {
         typicalEarnings: cpp.typicalEarnings ?? salary,
         yearsNotWorking: cpp.yearsNotWorking,
         childRearingYears: cpp.childRearingYears,
+        province: person.province,
       })
     : null
 
@@ -246,7 +248,7 @@ function BenefitsCard({ person }: { person: PersonV2 }) {
           <Field label="OAS start age" info="65 to 70. Each month you wait past 65 raises OAS by 0.6% (7.2% a year), for life.">
             <Select value={person.oas.startAge} onChange={(e) => update({ oas: { ...person.oas, startAge: Number(e.target.value) } })}>
               {range(OAS_MIN_START_AGE, OAS_MAX_START_AGE).map(age => (
-                <option key={age} value={age}>{age} · {money(getOasIncomeAtAge(OAS_MAX_ANNUAL_2026, age, age))}/yr</option>
+                <option key={age} value={age}>{age} · {money(oasAnnualAmount({ age, startAge: age, yearsInCanadaAfter18: person.oas.yearsInCanadaAfter18 }))}/yr</option>
               ))}
             </Select>
           </Field>
@@ -263,12 +265,12 @@ function RoomCard({ person }: { person: PersonV2 }) {
   const update = usePersonUpdate(person.id)
   return (
     <Card>
-      <CardHeader title="Contribution room" description="Warns you when planned RRSP or TFSA contributions exceed your room." />
+      <CardHeader title="Contribution room" description="Contributions over your room go to a non-registered account instead, with no deduction." />
       <Checkbox
         checked={person.room !== undefined}
         onChange={(on) => update({ room: on ? { rrsp: 0, tfsa: 0 } : undefined })}
         label="Track RRSP and TFSA contribution room"
-        description="Use the unused room on your CRA Notice of Assessment or in My Account. New room is added each year."
+        description="Use the unused room on your CRA Notice of Assessment or in My Account. New room is added each year. Without this, RRSP room is estimated from new room alone, assuming nothing is carried forward."
       />
       {person.room && (
         <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -280,6 +282,11 @@ function RoomCard({ person }: { person: PersonV2 }) {
           </Field>
         </div>
       )}
+      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <Field label="Pension adjustment, per year" info="From box 52 of your T4. Membership in an employer pension plan reduces the RRSP room you earn the following year.">
+          <NumberInput value={person.pensionAdjustment ?? 0} min={0} onChange={(v) => update({ pensionAdjustment: v > 0 ? v : undefined })} />
+        </Field>
+      </div>
     </Card>
   )
 }

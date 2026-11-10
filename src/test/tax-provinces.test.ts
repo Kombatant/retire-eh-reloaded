@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { PROVINCES } from '@/lib/plan/schema'
 import { computeIncomeTax, emptyIncome, marginalTaxRate, ontarioHealthPremium } from '@/lib/tax/personal'
-import { computeHouseholdTax, splittableAmount } from '@/lib/tax/household'
+import { computeHouseholdTax, quebecSplittableAmount, splittableAmount } from '@/lib/tax/household'
 import { payrollContributions } from '@/lib/tax/payroll'
 import { computePersonTax } from '@/lib/tax/quebecLegacy'
 import { TAX_2026 } from '@/lib/tax/data/2026'
@@ -48,9 +48,10 @@ describe('golden values (hand-computed from the 2026 CRA tables)', () => {
   })
 
   it('applies the BC low-income tax reduction', () => {
-    const r = ordinary('BC', 25000)
-    // 25,000 × 5.6% − 13,216 × 5.6% = 659.90, less the full $575 reduction.
-    expect(r.provincial).toBeCloseTo(84.9, 1)
+    // 25,000 × 5.6% − 13,216 × 5.6% = 659.90, all removed by the $690 reduction.
+    expect(ordinary('BC', 25000).provincial).toBe(0)
+    // 27,000 × 5.6% − 740.10 = 771.90, less 690 − 3.56% × (27,000 − 25,570) = 639.09.
+    expect(ordinary('BC', 27000).provincial).toBeCloseTo(132.81, 1)
   })
 
   it('computes the Ontario Health Premium bands', () => {
@@ -113,7 +114,8 @@ describe('Quebec matches the original estimator', () => {
         ...emptyIncome('QC', c.age), pension: c.pension, oas: c.oas, otherOrdinary: c.income - c.pension - c.oas,
       })
       expect(next.federal).toBeCloseTo(legacy.federal, 2)
-      expect(next.provincial).toBeCloseTo(legacy.quebec, 2)
+      // The original estimator has no health services fund contribution.
+      expect(next.provincial - next.healthPremium).toBeCloseTo(legacy.quebec, 2)
       expect(next.oasClawback).toBeCloseTo(legacy.oasClawback, 2)
     })
   }
@@ -161,23 +163,25 @@ describe('pension income splitting', () => {
   })
 
   it('requires the transferor to be 65+ in Quebec', () => {
-    expect(splittableAmount({ ...emptyIncome('QC', 60), pension: 40000 })).toBe(0)
-    expect(splittableAmount({ ...emptyIncome('QC', 65), pension: 40000 })).toBe(20000)
+    // Federally a pension plan splits at any age; Quebec's own return needs 65.
+    expect(splittableAmount({ ...emptyIncome('QC', 60), pension: 40000 })).toBe(20000)
+    expect(quebecSplittableAmount({ ...emptyIncome('QC', 60), pension: 40000 })).toBe(0)
+    expect(quebecSplittableAmount({ ...emptyIncome('QC', 65), pension: 40000 })).toBe(20000)
   })
 })
 
 describe('government benefits', () => {
   it('prorates OAS by residency and adds 10% at 75', () => {
-    expect(oasAnnualAmount({ age: 70, startAge: 65, yearsInCanadaAfter18: 40 })).toBeCloseTo(9024, 2)
-    expect(oasAnnualAmount({ age: 70, startAge: 65, yearsInCanadaAfter18: 20 })).toBeCloseTo(4512, 2)
+    expect(oasAnnualAmount({ age: 70, startAge: 65, yearsInCanadaAfter18: 40 })).toBeCloseTo(9150, 2)
+    expect(oasAnnualAmount({ age: 70, startAge: 65, yearsInCanadaAfter18: 20 })).toBeCloseTo(4575, 2)
     expect(oasAnnualAmount({ age: 70, startAge: 65, yearsInCanadaAfter18: 9 })).toBe(0)
-    expect(oasAnnualAmount({ age: 75, startAge: 65, yearsInCanadaAfter18: 40 })).toBeCloseTo(9024 * 1.1, 2)
+    expect(oasAnnualAmount({ age: 75, startAge: 65, yearsInCanadaAfter18: 40 })).toBeCloseTo(9150 * 1.1, 2)
     expect(oasAnnualAmount({ age: 64, startAge: 65, yearsInCanadaAfter18: 40 })).toBe(0)
   })
 
   it('pays the maximum GIS with no other income and none at the cutoff', () => {
     const [full] = gisAnnual([{ receivesOas: true, otherIncome: 0, employmentIncome: 0 }])
-    expect(full).toBeCloseTo(TAX_2026.gis.single.maxAnnual, 2)
+    expect(full).toBeCloseTo(1138.9 * 12, 2)
     const [none] = gisAnnual([{ receivesOas: true, otherIncome: 23112, employmentIncome: 0 }])
     expect(none).toBe(0)
     const [notEligible] = gisAnnual([{ receivesOas: false, otherIncome: 0, employmentIncome: 0 }])
@@ -192,7 +196,7 @@ describe('government benefits', () => {
     expect(couple[0]).toBeCloseTo(couple[1], 6)
     expect(couple[0]).toBeGreaterThan(0)
     const [working] = gisAnnual([{ receivesOas: true, otherIncome: 0, employmentIncome: 5000 }])
-    expect(working).toBeCloseTo(TAX_2026.gis.single.maxAnnual, 2)
+    expect(working).toBeCloseTo(1138.9 * 12, 2)
   })
 
   it('estimates CPP near the 2026 maximum for a full career at the YMPE', () => {
@@ -207,8 +211,8 @@ describe('government benefits', () => {
   })
 
   it('caps the CPP survivor pension at the maximum retirement pension', () => {
-    expect(cppSurvivorBenefit({ deceasedPension: 15000, survivorOwnPension: 0, survivorAge: 70, maxRetirementPension: 18092 })).toBeCloseTo(9000, 6)
-    expect(cppSurvivorBenefit({ deceasedPension: 15000, survivorOwnPension: 15000, survivorAge: 70, maxRetirementPension: 18092 })).toBeCloseTo(3092, 6)
-    expect(cppSurvivorBenefit({ deceasedPension: 15000, survivorOwnPension: 0, survivorAge: 60, maxRetirementPension: 18092 })).toBeCloseTo(5625, 6)
+    expect(cppSurvivorBenefit({ deceasedPension: 15000, survivorOwnPension: 0, survivorAge: 70, ownPensionPayable: false, plan: 'cpp' })).toBeCloseTo(9000, 6)
+    expect(cppSurvivorBenefit({ deceasedPension: 15000, survivorOwnPension: 15000, survivorAge: 70, ownPensionPayable: true, plan: 'cpp' })).toBeCloseTo(3378.72, 2)
+    expect(cppSurvivorBenefit({ deceasedPension: 15000, survivorOwnPension: 0, survivorAge: 60, ownPensionPayable: false, plan: 'cpp' })).toBeCloseTo(5625 + 238.17 * 12, 2)
   })
 })

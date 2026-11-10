@@ -69,7 +69,7 @@ function RetirementTaxes() {
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Stat label="Income before tax" value={money(tax.preTaxIncome)} sub="First year of retirement" />
         <Stat label="Total tax" value={money(tax.totalTax)} sub="Including OAS clawback" />
-        <Stat label="Income after tax" value={money(tax.afterTaxIncome)} sub={`Includes ${money(tax.taxFreeWithdrawal)} from TFSAs`} />
+        <Stat label="Income after tax" value={money(tax.afterTaxIncome)} sub={`Includes ${money(tax.taxFreeWithdrawal)} of tax-free withdrawals`} />
         <Stat
           label="Average / top rate"
           value={`${tax.averageTaxRate.toFixed(1)}% / ${tax.topMarginalRate.toFixed(1)}%`}
@@ -135,7 +135,7 @@ function RetirementTaxes() {
             <p className="max-w-3xl text-xs leading-relaxed text-fg-muted">
               Estimates only. Includes the main federal and provincial credits (basic, age, pension income), the OAS clawback, GIS,
               and pension income splitting (up to 50% of eligible pension income; RRIF income from age 65). TFSA withdrawals are
-              tax-free and not taxable income, so the household's after-tax income also includes {money(tax.taxFreeWithdrawal)} from TFSAs.
+              not taxable income, and non-registered sales are only taxed on their gain, so the household's after-tax income also includes {money(tax.taxFreeWithdrawal)} of withdrawals from TFSA, non-registered and cash accounts. Payroll deductions and tax paid by selling vested shares are counted.
             </p>
           </Disclosure>
         </div>
@@ -164,7 +164,7 @@ function TaxByYear() {
         <Stat label="Total" value={moneyCompact(lifetime + finalReturn)} className="col-span-2 lg:col-span-1" />
       </div>
       <Card>
-        <CardHeader title="Income tax by year" description="Federal and provincial tax, payroll deductions and the OAS clawback." />
+        <CardHeader title="Income tax by year" description="Federal and provincial tax and the OAS clawback. CPP and EI payroll deductions are not included." />
         <div className="h-72">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={series} margin={{ top: 8, right: 8, bottom: 0, left: 0 }} barCategoryGap={1}>

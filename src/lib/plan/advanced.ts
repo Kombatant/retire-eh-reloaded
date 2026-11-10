@@ -10,7 +10,9 @@ export interface AdvancedSetting {
   label: string
 }
 
-const DEFAULT_ASSET_RETURNS = { equityPct: 6.6, bondPct: 3.4, cashPct: 2.4 }
+// Both sets are defaults: 2026 FP Canada for new plans, the earlier one for
+// plans made before it. Neither was chosen by the person.
+const DEFAULT_ASSET_RETURNS = [{ equityPct: 6.6, bondPct: 3.4, cashPct: 2.4 }, { equityPct: 6.3, bondPct: 3.2, cashPct: 2.4 }]
 const ESSENTIAL_STRATEGIES = new Set(['initialPct', 'expenses'])
 
 export function advancedSettingsInUse(plan: PlanV2): AdvancedSetting[] {
@@ -26,6 +28,7 @@ export function advancedSettingsInUse(plan: PlanV2): AdvancedSetting[] {
       add('household', `${pensionName} work-history gaps${who(person.name)}`)
     }
     if (person.room !== undefined) add('household', `Contribution room tracking${who(person.name)}`)
+    if ((person.pensionAdjustment ?? 0) > 0) add('household', `Pension adjustment${who(person.name)}`)
   }
 
   for (const account of plan.accounts) {
@@ -41,7 +44,10 @@ export function advancedSettingsInUse(plan: PlanV2): AdvancedSetting[] {
     }
   }
 
+  if (plan.assumptions.feePct > 0) add('assumptions', 'Investment fees')
+  if (plan.expenses.survivorSpendingPct !== 100) add('spending', 'Survivor spending')
   for (const income of plan.incomes) {
+    if (income.propertyId) add('income', `Rental tied to a property: ${income.label || 'rental'}`)
     const db = income.db
     if (income.kind !== 'dbPension' || !db) continue
     if (db.indexationPctOfCpi !== 100 || db.survivorPct !== 60 || db.bridge) add('income', `Pension details for ${income.label || 'pension'}`)
@@ -68,7 +74,7 @@ export function advancedSettingsInUse(plan: PlanV2): AdvancedSetting[] {
   if (!plan.estate.probate) add('withdrawals', 'Probate fees left out')
 
   const r = plan.assumptions.assetReturns
-  if (r.equityPct !== DEFAULT_ASSET_RETURNS.equityPct || r.bondPct !== DEFAULT_ASSET_RETURNS.bondPct || r.cashPct !== DEFAULT_ASSET_RETURNS.cashPct) {
+  if (!DEFAULT_ASSET_RETURNS.some(d => d.equityPct === r.equityPct && d.bondPct === r.bondPct && d.cashPct === r.cashPct)) {
     add('assumptions', 'Custom asset-class returns')
   }
 

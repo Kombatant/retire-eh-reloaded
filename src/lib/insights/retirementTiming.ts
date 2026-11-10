@@ -37,15 +37,12 @@ export interface RetirementTimingUpdate {
   done: boolean
 }
 
-// Random markets can put one age just under the target while its neighbours
-// pass, so this reads back from the latest age and stops at the first failure.
-// The age it returns stays safe if retirement slips a year or two later.
-function findSafestIndex(options: RetirementAgeOption[]): number | null {
+// The earliest age from which every later age tested is also safe, so the
+// answer holds if retirement slips later. If the latest age fails, none qualify:
+// reading back stops at the first failure and never skips one.
+export function findSafestIndex(options: Pick<RetirementAgeOption, 'safe'>[]): number | null {
   let found: number | null = null
-  for (let i = options.length - 1; i >= 0; i--) {
-    if (options[i].safe) found = i
-    else if (found !== null) break
-  }
+  for (let i = options.length - 1; i >= 0 && options[i].safe; i--) found = i
   return found
 }
 

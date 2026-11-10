@@ -4,8 +4,12 @@ import { newId } from './ids'
 // Province for brand-new plans. Migrated plans keep Quebec (see migrate.ts).
 export const DEFAULT_PROVINCE: ProvinceCode = 'ON'
 
+// The local calendar date. toISOString() is UTC, which is already tomorrow on
+// a Canadian evening and next year on the evening of December 31.
 export function isoDate(now: Date): string {
-  return now.toISOString().slice(0, 10)
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${now.getFullYear()}-${month}-${day}`
 }
 
 export function createDefaultPerson(params: {
@@ -41,6 +45,15 @@ export function createDefaultPlan(now: Date = new Date(), name = 'My plan'): Pla
     name,
     asOf: isoDate(now),
     people: [person],
+    // Written out so existing plans, which fall back on schema defaults, keep
+    // their own assumptions. 60/40 at the FP Canada 2026 guidelines is about 5.06%,
+    // less about 0.5% for fees; inflation is above the guideline's 2.1% on purpose.
+    assumptions: {
+      expectedReturn: 4.5,
+      inflationRate: 2.5,
+      assetReturns: { equityPct: 6.3, bondPct: 3.2, cashPct: 2.4 },
+    },
+    drawdown: { strategy: { kind: 'expenses' } },
     accounts: [
       { id: '1-1', ownerId: person.id, type: 'RRSP', balance: 100000, contributions: [] },
       { id: '1-2', ownerId: person.id, type: 'TFSA', balance: 80000, contributions: [] },

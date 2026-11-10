@@ -2,6 +2,9 @@ import yaml from 'js-yaml'
 import type { PlanV2, UiPrefs } from '@/lib/plan/schema'
 import { parsePlanData } from '@/lib/plan/migrate'
 
+// Far more than any real plan: a limit against a file that would freeze the page.
+export const MAX_IMPORT_BYTES = 2 * 1024 * 1024
+
 export interface ImportedPlan {
   plan: PlanV2
   // Display preferences carried by v1 files (they used to live in the plan).
@@ -16,6 +19,10 @@ export function exportToYAML(plan: PlanV2): string {
 // Accepts any supported schema version; older files are migrated to v2.
 export function importFromYAML(yamlString: string, now: Date = new Date()): ImportedPlan | null {
   try {
+    if (yamlString.length > MAX_IMPORT_BYTES) {
+      console.error('Plan file is too large to import.')
+      return null
+    }
     const parsed = yaml.load(yamlString)
     if (!parsed || typeof parsed !== 'object') {
       return null
@@ -52,7 +59,7 @@ export async function uploadYAML(): Promise<ImportedPlan | null> {
 
     input.onchange = (e) => {
       const file = (e.target as HTMLInputElement).files?.[0]
-      if (!file) {
+      if (!file || file.size > MAX_IMPORT_BYTES) {
         resolve(null)
         return
       }

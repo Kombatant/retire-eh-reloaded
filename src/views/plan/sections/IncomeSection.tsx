@@ -200,6 +200,14 @@ function IncomeEditor({ income }: { income: IncomeStream }) {
 
       {!isBonus && <Advanced>
         <div className="grid grid-cols-1 gap-4 border-t border-border pt-5 sm:grid-cols-2">
+          {income.kind === 'rental' && (
+            <Field label="From property" info="The income ends when this property is sold. Enter rent net of the expenses you can deduct.">
+              <Select value={income.propertyId ?? ''} onChange={(e) => update({ propertyId: e.target.value || undefined })}>
+                <option value="">Not linked</option>
+                {activePlan.properties.map(p => <option key={p.id} value={p.id}>{p.label || 'Property'}</option>)}
+              </Select>
+            </Field>
+          )}
           <Field label="Tax treatment">
             <Select value={income.taxTreatment} onChange={(e) => update({ taxTreatment: e.target.value as IncomeStream['taxTreatment'] })}>
               <option value="ordinary">Taxable income</option>

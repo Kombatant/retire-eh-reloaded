@@ -3,7 +3,9 @@ import { PiggyBank } from 'lucide-react'
 import { usePlanStore } from '@/contexts/PlanStoreContext'
 import { useProjectionContext } from '@/contexts/ProjectionContext'
 import { useDetailLevel } from '@/hooks/useDetailLevel'
-import { addAccount, deleteAccount, patchAccount, setAccountContributionRule } from '@/lib/plan/edits'
+import { addAccount, deleteAccount, patchAccount, patchAccountBalance, setAccountContributionRule } from '@/lib/plan/edits'
+import { isoDate } from '@/lib/plan/defaults'
+import { isRealDate } from '@/lib/plan/diagnostics'
 import { ACCOUNT_TYPES, PROVINCES, RRIF_EARLIEST_CONVERSION_AGE, RRIF_LATEST_CONVERSION_AGE, type AccountType, type AccountV2, type ProvinceCode } from '@/lib/plan/schema'
 import { IntegerInput } from '@/components/ui/IntegerInput'
 import { provinceName } from '@/lib/tax/labels'
@@ -52,14 +54,17 @@ export function SavingsSection() {
 
   const addable = ACCOUNT_TYPES.filter(t => isAdvanced || t !== 'STOCK')
 
-  // Contribution-room warnings: first year a tracked room goes negative.
-  const roomWarnings = people.flatMap((person, idx) => (['rrspRoom', 'tfsaRoom'] as const).flatMap(key => {
-    const row = simulation.rows.find(r => (r.people[idx]?.[key] ?? 0) < -1)
-    if (!row) return []
-    const label = key === 'rrspRoom' ? 'RRSP' : 'TFSA'
-    const who = people.length > 1 ? `${person.name}'s ` : ''
-    return [`${who}planned ${label} contributions exceed the available room in ${row.year} (by ${money(-row.people[idx][key])}).`]
-  }))
+  // Joint accounts count in every total, so they need a row to be edited from.
+  const hasPerson = (id: string) => people.some(p => p.id === id)
+  const ownerGroups = [
+    ...people.map(p => ({ id: p.id, name: p.name, owns: (ownerId: string) => ownerId === p.id })),
+    ...(accounts.some(a => !hasPerson(a.ownerId)) ? [{ id: 'joint', name: 'Joint', owns: (ownerId: string) => !hasPerson(ownerId) }] : []),
+  ]
+
+  // Contributions the plan moved to a non-registered account because they
+  // were over the room available, and whether that room is only an estimate.
+  const overRoom = simulation.rows.find(r => r.excessContributions > 1)
+  const roomIsEstimated = people.some(p => p.room?.rrsp === undefined)
 
   const totals: Record<AccountGroup, number> = { registered: 0, tfsa: 0, taxable: 0 }
   for (const a of accounts) totals[accountGroup(a.type)] += accountValue(a, usdCad)
@@ -81,16 +86,26 @@ export function SavingsSection() {
 
         {total > 0 && <CompositionBar totals={totals} total={total} />}
 
+        {accounts.length > 0 && (
+          <Field
+            label="Balances as of"
+            info="The projection starts from this date: only the rest of this year's income, spending, saving and growth are counted. Updated when you change a balance here or record balances under Tracking."
+            className="mb-4 w-48"
+          >
+            <TextInput type="date" value={activePlan.asOf} onChange={(e) => { if (isRealDate(e.target.value)) updateActivePlan(p => ({ ...p, asOf: e.target.value })) }} />
+          </Field>
+        )}
+
         {accounts.length === 0 ? (
           <EmptyState icon={PiggyBank} title="No accounts yet" description="Add an RRSP, TFSA or other account to project how your savings grow." />
         ) : (
           <div className="space-y-4">
-            {people.map(person => {
-              const owned = accounts.filter(a => a.ownerId === person.id)
+            {ownerGroups.map(group => {
+              const owned = accounts.filter(a => group.owns(a.ownerId))
               if (owned.length === 0) return null
               return (
-                <div key={person.id}>
-                  {people.length > 1 && <div className="mb-1.5 text-xs font-medium text-fg-muted">{person.name}</div>}
+                <div key={group.id}>
+                  {ownerGroups.length > 1 && <div className="mb-1.5 text-xs font-medium text-fg-muted">{group.name}</div>}
                   <ListFrame>
                     {owned.map(account => {
                       const contribution = account.contributions[0]?.amount ?? 0
@@ -119,9 +134,10 @@ export function SavingsSection() {
         )}
       </Card>
 
-      {roomWarnings.length > 0 && (
-        <Callout tone="warning" title="Over your contribution room">
-          {roomWarnings.map(w => <div key={w}>{w}</div>)}
+      {overRoom && (
+        <Callout tone="warning" title="Some contributions are over your room">
+          In {overRoom.year}, {money(overRoom.excessContributions / overRoom.cpi)} (today's dollars) is more than your RRSP or TFSA room allows. The plan invests it in a non-registered account instead, with no deduction.
+          {roomIsEstimated && ' RRSP room is estimated from new room only, because no unused room is entered. Add yours under Plan › Household, in Advanced mode, to use your real room.'}
         </Callout>
       )}
 
@@ -162,7 +178,7 @@ function CompositionBar({ totals, total }: { totals: Record<AccountGroup, number
 }
 
 function AccountEditor({ account }: { account: AccountV2 }) {
-  const { activePlan, updateActivePlan } = usePlanStore()
+  const { activePlan, updateActivePlan, now } = usePlanStore()
   const { compiledPlan } = useProjectionContext()
   const update = (patch: Partial<AccountV2>) => updateActivePlan(p => patchAccount(p, account.id, patch))
   const contribution = account.contributions[0]
@@ -177,6 +193,7 @@ function AccountEditor({ account }: { account: AccountV2 }) {
         <Field label="Owner">
           <Select value={account.ownerId} onChange={(e) => update({ ownerId: e.target.value })}>
             {activePlan.people.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            {(account.ownerId === 'joint' || account.type === 'NONREG' || account.type === 'CASH') && <option value="joint">Joint</option>}
           </Select>
         </Field>
       )}
@@ -197,7 +214,7 @@ function AccountEditor({ account }: { account: AccountV2 }) {
       {common}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="Balance today">
-          <NumberInput value={account.balance || 0} min={0} onChange={(v) => update({ balance: v })} />
+          <NumberInput value={account.balance || 0} min={0} onChange={(v) => updateActivePlan(p => patchAccountBalance(p, account.id, v, isoDate(now)))} />
         </Field>
         <Field label="Contribution per year" hint="Until retirement.">
           <NumberInput
@@ -220,9 +237,14 @@ function AccountEditor({ account }: { account: AccountV2 }) {
       </div>
 
       {account.type === 'FHSA' && (
-        <Field label="Contributed so far (lifetime)" hint="FHSA lifetime limit is $40,000.">
-          <NumberInput value={account.lifetimeContributed} min={0} max={40000} onChange={(v) => update({ lifetimeContributed: v })} />
-        </Field>
+        <>
+          <Field label="Contributed so far (lifetime)" hint="FHSA lifetime limit is $40,000.">
+            <NumberInput value={account.lifetimeContributed} min={0} max={40000} onChange={(v) => update({ lifetimeContributed: v })} />
+          </Field>
+          <Field label="Year you buy your first home" info="The whole balance comes out tax-free that year. Leave blank if no purchase is planned: the account then closes by its 15th year or the year you turn 71, and what is left rolls into your RRSP without using RRSP room.">
+            <IntegerInput value={account.homePurchaseYear ?? 0} min={0} max={2200} onChange={(v) => update({ homePurchaseYear: v >= 1900 ? v : undefined })} />
+          </Field>
+        </>
       )}
 
       {account.type === 'RRSP' && (
@@ -268,6 +290,7 @@ function AccountEditor({ account }: { account: AccountV2 }) {
             <Field label="Cost base (ACB)" info="What you paid for the investments. The difference from the balance is a capital gain, taxed when sold.">
               <NumberInput value={account.acb ?? account.balance} min={0} onChange={(v) => update({ acb: v })} />
             </Field>
+            <p className="text-xs text-fg-muted sm:col-span-3">New accounts start with an estimate for a 60/40 mix. Change these to match what you hold.</p>
             <Field label="Interest per year" info="Paid as a % of the balance, reinvested, and taxed every year as income.">
               <PercentInput
                 value={account.yields?.interestPct ?? 0}

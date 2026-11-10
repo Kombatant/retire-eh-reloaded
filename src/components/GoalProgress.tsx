@@ -16,13 +16,13 @@ export function GoalProgress({ outlook, barClassName, onTestRoom }: {
   return (
     <div>
       <div className="flex justify-between text-xs text-fg-muted">
-        <span>Goal progress{outlook.progressBasis === 'afterTax' ? ', after tax' : ''}</span>
+        <span>Savings guideline{outlook.progressBasis === 'afterTax' ? ', after tax' : ''}</span>
         <span className="font-medium text-fg">{value}</span>
       </div>
       <div
         className={cn('mt-1.5 overflow-hidden rounded-full bg-surface-muted', barClassName)}
         role="progressbar"
-        aria-label="Goal progress"
+        aria-label="Savings guideline"
         aria-valuenow={Math.round(barWidth)}
         aria-valuemin={0}
         aria-valuemax={100}
@@ -40,7 +40,11 @@ export function GoalProgress({ outlook, barClassName, onTestRoom }: {
       )}
       {outlook.metOnPaperOnly ? (
         <p className="mt-2 text-xs text-fg-secondary">
-          Your savings reach the goal on paper, but the year-by-year simulation runs short, so there's no room to add spending.
+          Your savings reach the guideline, but the year-by-year simulation runs short, so there's no room to add spending.
+        </p>
+      ) : outlook.needsTarget ? (
+        <p className="mt-2 text-xs text-fg-secondary">
+          Set an income target under Plan › Spending so there is something to test this plan against.
         </p>
       ) : (outlook.onTrack && (outlook.noSavingsNeeded || room !== null)) && (
         <p className="mt-2 text-xs text-fg-secondary">

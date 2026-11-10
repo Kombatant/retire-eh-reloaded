@@ -4,11 +4,11 @@ import { useProjectionContext } from '@/contexts/ProjectionContext'
 import { useAssumptions } from '@/contexts/AssumptionsContext'
 import { useSubView } from '@/hooks/useSubView'
 import { useDetailLevel } from '@/hooks/useDetailLevel'
-import { getPortfolioAtRetirement, giftsAfterRetirement, CPP_BASELINE_AGE, CPP_MIN_START_AGE, maxPensionStartAge, OAS_BASELINE_AGE, OAS_MAX_START_AGE, getCppIncomeAtAge, getOasIncomeAtAge } from '@/lib/calculations'
+import { getPortfolioAtRetirement, CPP_BASELINE_AGE, CPP_MIN_START_AGE, maxPensionStartAge, OAS_BASELINE_AGE, OAS_MAX_START_AGE, getCppIncomeAtAge } from '@/lib/calculations'
 import { cppAmountAt65, primarySalary } from '@/lib/plan/legacy-view'
 import { hasStock } from '@/lib/insights/stockScenarios'
 import { buildAccountBreakdown } from '@/lib/insights/accountBreakdown'
-import { OAS_MAX_ANNUAL_2026 } from '@/lib/tax'
+import { oasAnnualAmount } from '@/lib/benefits/oas'
 import { money } from '@/lib/formatting'
 import { moneyMode } from '@/lib/ui/money'
 import { table } from '@/lib/ui/styles'
@@ -124,7 +124,7 @@ function GrowthPanel() {
         />
         {view === 'balances'
           ? <AccountBalancesChart rows={breakdown} />
-          : <ContributionChart data={data} annualContribution={projection.totalAnnualContributions} showRealValues={assumptions.showRealValues} inflationRate={assumptions.inflationRate} />}
+          : <ContributionChart rows={projection.simulation.rows.slice(0, compiledPlan.drawdownStartOffset + 1)} firstAge={projection.minCurrentAge} showRealValues={assumptions.showRealValues} />}
         <Disclosure label="How to read this" className="mt-4">
           <p className="max-w-3xl text-xs leading-relaxed text-fg-muted">
             Savings compound at {r}% a year before inflation, about {(((1 + r / 100) / (1 + assumptions.inflationRate / 100) - 1) * 100).toFixed(1)}% after
@@ -142,8 +142,6 @@ function DrawdownPanel() {
   const assumptions = useAssumptions()
   const estate = projection.simulation.estate
   const scale = estate && assumptions.showRealValues ? 1 / estate.cpi : 1
-  const data = projection.currentProjectionData
-  const startAge = data.length > 0 ? data[data.length - 1].age : projection.householdRetirementAge
   const [sourcesView, setSourcesView] = useState<'chart' | 'table'>('chart')
   const { compiledPlan, simulation } = projection
   // A plan built from a dollar budget starts on dollars; one set as a share of
@@ -206,15 +204,7 @@ function DrawdownPanel() {
         {withdrawalView === 'dollars'
           ? <SpendingLevelsChart compiledPlan={compiledPlan} expectedReturn={assumptions.expectedReturn} showRealValues={assumptions.showRealValues} />
           : (
-            <DrawdownRatesChart
-              startBalance={getPortfolioAtRetirement(data)}
-              expectedReturn={assumptions.expectedReturn}
-              inflationRate={assumptions.inflationRate}
-              startAge={startAge}
-              showRealValues={assumptions.showRealValues}
-              plannedGifts={giftsAfterRetirement(assumptions.plannedGifts, projection.householdRetirementAge)}
-              minCurrentAge={projection.minCurrentAge}
-            />
+            <DrawdownRatesChart compiledPlan={compiledPlan} expectedReturn={assumptions.expectedReturn} showRealValues={assumptions.showRealValues} />
           )}
       </Card>
       {estate && (
@@ -226,7 +216,7 @@ function DrawdownPanel() {
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
             <Stat bare label="Estate before tax" value={money(estate.grossEstate * scale)} />
             <Stat bare label="Tax on final return" value={`−${money(estate.finalReturnTax * scale)}`} />
-            <Stat bare label="Probate" value={`−${money(estate.probate * scale)}`} />
+            <Stat bare label="Probate (estimate)" value={`−${money(estate.probate * scale)}`} />
             <Stat bare label="Left to heirs" value={money(estate.afterTaxEstate * scale)} tone="success" />
           </div>
         </Card>
@@ -263,7 +253,7 @@ function BenefitTiming() {
               <BenefitTable
                 title="OAS"
                 ages={[OAS_BASELINE_AGE, 67, OAS_MAX_START_AGE]}
-                annualAt={(age) => getOasIncomeAtAge(OAS_MAX_ANNUAL_2026, age, age)}
+                annualAt={(age) => oasAnnualAmount({ age, startAge: age, yearsInCanadaAfter18: person.oas.yearsInCanadaAfter18 })}
                 selected={person.oas.startAge}
               />
             </div>

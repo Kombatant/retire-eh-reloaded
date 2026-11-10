@@ -76,6 +76,9 @@ export const personSchema = z.object({
     startAge: z.number().int().min(65).max(70).default(65),
     yearsInCanadaAfter18: z.number().int().min(0).max(47).default(40),
   }).prefault({}),
+  // Pension adjustment from an employer plan, per year while working: it comes
+  // off the RRSP room earned the following year (T4 box 52).
+  pensionAdjustment: money.optional(),
   // Unused contribution room as of the plan start. Undefined means "not tracked".
   room: z.object({
     rrsp: money.optional(),
@@ -220,6 +223,9 @@ export const accountSchema = z.discriminatedUnion('type', [
     type: z.literal('FHSA'),
     openedYear: calendarYear.optional(),
     lifetimeContributed: money.default(0),
+    // The year of a qualifying withdrawal for a first home: the whole balance
+    // comes out tax-free. Undefined: no home purchase planned.
+    homePurchaseYear: calendarYear.optional(),
   }),
   z.object({ ...accountBase, type: z.literal('LIRA'), jurisdiction: lockedInJurisdiction }),
   z.object({ ...accountBase, type: z.literal('LIF'), jurisdiction: lockedInJurisdiction }),
@@ -272,6 +278,8 @@ export const incomeSchema = z.object({
   to: timePointSchema.optional(),
   growth: growthSchema.prefault({ kind: 'cpi' }),
   taxTreatment: z.enum(['ordinary', 'nonTaxable', 'capitalGain', 'eligibleDividend']).default('ordinary'),
+  // kind 'rental': the property this comes from. The income ends when it is sold.
+  propertyId: id.optional(),
   db: z.object({
     indexationPctOfCpi: percent(0, 100).default(100),
     bridge: z.object({ amount: money, untilAge: age }).optional(),
@@ -324,6 +332,12 @@ export const expensesSchema = z.object({
   // detailed: spending is the sum of all items.
   mode: z.enum(['simple', 'detailed']).default('simple'),
   replacementRate: percent(0, 200).default(70),
+  // Spending items after the first death, as a percentage. Property costs,
+  // debts and one-time costs don't shrink with it.
+  survivorSpendingPct: percent(0, 100).default(100),
+  // Simple mode: a pre-tax income target in today's dollars, for people with no
+  // salary to take a percentage of. Used instead of the percentage when set.
+  incomeTarget: money.optional(),
   // Detailed mode, working years: invest any cash left after spending and
   // contributions ('save'), or leave it out of the projection ('ignore').
   // Shortfalls are always funded from the portfolio.
@@ -360,6 +374,9 @@ export const debtSchema = z.object({
   balance: money,
   interestRatePct: percent(0, 40),
   monthlyPayment: money,
+  // How the quoted rate compounds. Canadian fixed-rate mortgages are quoted
+  // semi-annually; omitted means monthly, which is how older plans ran.
+  rateCompounding: z.enum(['monthly', 'semiAnnual']).optional(),
   propertyId: id.optional(),
 })
 export type Debt = z.infer<typeof debtSchema>
@@ -418,6 +435,9 @@ export const assumptionsSchema = z.object({
   // tax engine computes working-year tax directly.
   workingMarginalTaxRate: percent(0, 60).default(30),
   reinvestRrspRefund: z.boolean().default(false),
+  // Yearly fees taken off asset-class returns and historical replays. Not off
+  // expectedReturn, which is entered after fees.
+  feePct: percent(0, 10).default(0),
   // Which price-growth case to use for individual stocks in projections.
   stockScenario: z.enum(STOCK_SCENARIOS).default('base'),
   // Canadian dollars per US dollar, for stock prices. Projections hold it

@@ -75,10 +75,10 @@ export function validateAge(currentAge: number): string | null {
   return null
 }
 
-export function validateRetirementAge(retirementAge: number, currentAge: number): string | null {
+// A retirement age in the past is fine: the person has already retired.
+export function validateRetirementAge(retirementAge: number): string | null {
   if (isNaN(retirementAge) || retirementAge < 0) return 'Age must be 0 or greater'
   if (retirementAge > 120) return 'Age must be 120 or less'
   if (!Number.isInteger(retirementAge)) return 'Age must be a whole number'
-  if (retirementAge <= currentAge) return 'Must be greater than current age'
   return null
 }

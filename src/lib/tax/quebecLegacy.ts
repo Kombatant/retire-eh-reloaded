@@ -54,6 +54,9 @@ export const QUEBEC_RETIREMENT_AMOUNT_2026 = 3541
 export const QUEBEC_CREDIT_REDUCTION_THRESHOLD_2026 = 42955
 export const QUEBEC_CREDIT_REDUCTION_RATE = 0.1875
 
+// Frozen with the v1 engine so the sim-parity test keeps meaning something: it
+// compares two implementations, and a shared constant would drift with both.
+// Current benefit figures live in src/lib/tax/data/2026.ts.
 export const OAS_MAX_ANNUAL_2026 = 9024
 export const OAS_CLAWBACK_THRESHOLD_2026 = 95323
 export const OAS_RECOVERY_RATE = 0.15

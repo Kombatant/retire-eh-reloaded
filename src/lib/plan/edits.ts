@@ -125,6 +125,11 @@ export function addAccount(plan: PlanV2, ownerId: string, type: AccountV2['type'
     case 'STOCK':
       account = { ...base, type, holdings: [], salePlan: { kind: 'none' } }
       break
+    case 'NONREG':
+      // An estimate for a 60/40 portfolio: tax on distributions is real even
+      // when they are reinvested. Labelled as an estimate, and editable.
+      account = { ...base, type, yields: { interestPct: 1.3, eligibleDividendPct: 0.8, foreignDividendPct: 0.5 } }
+      break
     default:
       account = { ...base, type } as AccountV2
   }
@@ -219,6 +224,11 @@ export function patchAssumptions(plan: PlanV2, patch: Partial<PlanV2['assumption
 }
 
 // --- Generic account and income edits (v2 editors) -------------------------
+
+// Changing a balance is what makes the plan's balance date true again.
+export function patchAccountBalance(plan: PlanV2, accountId: string, balance: number, today: string): PlanV2 {
+  return { ...patchAccount(plan, accountId, { balance }), asOf: today }
+}
 
 export function patchAccount(plan: PlanV2, accountId: string, patch: Partial<AccountV2>): PlanV2 {
   return {

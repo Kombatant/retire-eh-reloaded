@@ -19,8 +19,9 @@ function goal(overrides: Partial<RetirementGoalResult & { projectedAnnualIncome:
 }
 
 describe('retirementOutlook', () => {
-  it('needs both pre-tax and after-tax progress when tax is known', () => {
-    const o = retirementOutlook(goal(), { effectiveTaxRate: 15 })
+  it('takes the verdict from the simulation, and shows the weaker guideline', () => {
+    expect(retirementOutlook(goal(), { effectiveTaxRate: 15, planFunded: true }).onTrack).toBe(true)
+    const o = retirementOutlook(goal(), { effectiveTaxRate: 15, planFunded: false })
     expect(o.onTrack).toBe(false)
     expect(o.progressPct).toBe(95)
     expect(o.progressBasis).toBe('afterTax')
@@ -29,7 +30,7 @@ describe('retirementOutlook', () => {
   })
 
   it('uses pre-tax progress alone when there is no tax estimate', () => {
-    const o = retirementOutlook(goal(), {})
+    const o = retirementOutlook(goal(), { planFunded: true })
     expect(o.onTrack).toBe(true)
     expect(o.progressPct).toBe(110)
     expect(o.progressBasis).toBe('preTax')
@@ -38,6 +39,7 @@ describe('retirementOutlook', () => {
 
   it('carries the levelized benefits through the tax snapshot', () => {
     const o = retirementOutlook(goal({ projectedAnnualIncome: 80_000 }), {
+      planFunded: true,
       effectiveTaxRate: 15,
       taxSummary: { preTaxIncome: 70_000, afterTaxIncome: 56_000, averageTaxRate: 20 } as never,
     })
@@ -50,32 +52,32 @@ describe('retirementOutlook', () => {
 describe('progress past the goal', () => {
   const goalFor = (total: number, annualPension: number, rrsp = 0) => calculateRetirementGoalWithIncome({
     currentProjectionData: [{ Total: total, RRSP: rrsp }] as never, annualSpendingTarget: 60_000, annualPension,
-    withdrawalRate: 4, yearsToRetirement: 10, expectedReturn: 7, inflationRate: 2, currentAnnualContributions: 0, currentPortfolio: 0,
+    withdrawalRate: 4, yearsToRetirement: 10, expectedReturn: 7, inflationRate: 2,
     effectiveTaxRate: rrsp > 0 ? 25 : 0,
   })
 
   it('reports income room rather than treating surplus savings as spending', () => {
-    const o = retirementOutlook(goalFor(600_000, 40_000), {})
+    const o = retirementOutlook(goalFor(600_000, 40_000), { planFunded: true })
     expect(o.progressPct).toBeCloseTo(120, 6)
     expect(o.annualRoom).toBeCloseTo(4_000, 6)
   })
 
   it('keeps room proportionate when guaranteed income covers most of the goal', () => {
-    const o = retirementOutlook(goalFor(500_000, 58_000), {})
+    const o = retirementOutlook(goalFor(500_000, 58_000), { planFunded: true })
     expect(o.progressPct).toBeCloseTo(1000, 6)
     expect(o.annualRoom).toBeCloseTo(18_000, 6)
   })
 
   it('measures room on the weaker after-tax basis when tax is known', () => {
     // RRSP tax leaves 500k of 600k: exactly the 500k needed, so no room.
-    const o = retirementOutlook(goalFor(600_000, 40_000, 400_000), { effectiveTaxRate: 25 })
+    const o = retirementOutlook(goalFor(600_000, 40_000, 400_000), { effectiveTaxRate: 25, planFunded: true })
     expect(o.progressPct).toBeCloseTo(100, 6)
     expect(o.progressBasis).toBe('afterTax')
     expect(o.annualRoom).toBeCloseTo(0, 6)
   })
 
   it('counts surplus guaranteed income as room when no savings are needed', () => {
-    const o = retirementOutlook(goalFor(100_000, 70_000), {})
+    const o = retirementOutlook(goalFor(100_000, 70_000), { planFunded: true })
     expect(o.noSavingsNeeded).toBe(true)
     expect(o.progressPct).toBe(100)
     // 4,000 from savings + 10,000 of guaranteed income above the goal.
@@ -91,7 +93,7 @@ describe('progress past the goal', () => {
   })
 
   it('reports no room below the goal', () => {
-    const o = retirementOutlook(goalFor(400_000, 40_000), {})
+    const o = retirementOutlook(goalFor(400_000, 40_000), { planFunded: true })
     expect(o.annualRoom).toBeNull()
     expect(o.metOnPaperOnly).toBe(false)
   })
@@ -162,7 +164,7 @@ describe('retirementSpendingTarget', () => {
   it('counts a goal that guaranteed income fully covers as met', () => {
     const goalResult = calculateRetirementGoal({
       currentProjectionData: [], annualSpendingTarget: 20_000, annualPension: 30_000, withdrawalRate: 4,
-      yearsToRetirement: 10, expectedReturn: 7, inflationRate: 2, currentAnnualContributions: 0, currentPortfolio: 0,
+      yearsToRetirement: 10, expectedReturn: 7, inflationRate: 2,
     })
     expect(goalResult.requiredPortfolio).toBe(0)
     expect(goalResult.progress).toBe(100)
@@ -193,7 +195,7 @@ describe('a planned property sale', () => {
   it('discounts money that arrives after retirement and does not tax it as RRSP', () => {
     const base = {
       annualSpendingTarget: 60_000, annualPension: 0, withdrawalRate: 4, yearsToRetirement: 0, expectedReturn: 7,
-      inflationRate: 2, currentAnnualContributions: 0, currentPortfolio: 0, effectiveTaxRate: 25,
+      inflationRate: 2, effectiveTaxRate: 25,
       currentProjectionData: [{ Total: 500_000, RRSP: 500_000 } as never],
     }
     const without = calculateRetirementGoalWithIncome(base)
@@ -249,15 +251,13 @@ describe('a planned property sale', () => {
 
 describe('moneyLasts', () => {
   it('reports the end of the plan when savings never run out', () => {
-    const plan = createDefaultPlan(new Date(2026, 0, 1))
+    const base = createDefaultPlan(new Date(2026, 0, 1))
+    const plan = { ...base, assumptions: { ...base.assumptions, expectedReturn: 7 } }
     const { compiled, result } = simulatePlan(plan, { startYear: 2026 })
     const lasts = moneyLasts(plan, compiled, result)
-    if (result.depletionOffset === null) {
-      expect(lasts.wholePlan).toBe(true)
-      expect(lasts.year).toBe(2026 + compiled.years - 1)
-    } else {
-      expect(lasts.wholePlan).toBe(false)
-    }
+    expect(result.depletionOffset).toBeNull()
+    expect(lasts.wholePlan).toBe(true)
+    expect(lasts.year).toBe(2026 + compiled.years - 1)
     expect(lasts.age).toBe(lasts.year - plan.people[0].birthYear)
   })
 })

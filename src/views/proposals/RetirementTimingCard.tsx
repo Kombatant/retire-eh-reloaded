@@ -68,7 +68,7 @@ function Headline({ timing }: { timing: RetirementTiming }) {
     <div>
       <p className="text-lg font-semibold text-fg">Earliest safe age: {ageLabel(safest)}</p>
       <p className="mt-0.5 text-sm text-fg-muted">
-        {versusPlan(safest.shift)} {safest.score.successRate !== null && `Retiring then gives a ${pct(safest.score.successRate)} chance of success. `}Later ages stay safe too.
+        {versusPlan(safest.shift)} {safest.score.successRate !== null && `Retiring then gives a ${pct(safest.score.successRate)} chance of success. `}Every later age tested stays safe too.
       </p>
     </div>
   )

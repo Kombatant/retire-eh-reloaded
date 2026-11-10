@@ -202,7 +202,7 @@ export function WithdrawalsSection() {
             <Checkbox
               checked={activePlan.estate.probate}
               onChange={(on) => updateActivePlan(p => patchEstate(p, { probate: on }))}
-              label="Include probate fees in the estate estimate"
+              label="Include estimated probate fees in the estate figure"
             />
           </div>
         </Card>

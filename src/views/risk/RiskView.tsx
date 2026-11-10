@@ -9,7 +9,7 @@ import { patchSimulation } from '@/lib/plan/edits'
 import { scenarioGrowthPct, type PlanV2 } from '@/lib/plan/schema'
 import { HISTORICAL_RANGE, HISTORICAL_SOURCE } from '@/lib/sim/paths/historical'
 import { arithmeticFromCompounded } from '@/lib/sim/paths/monteCarlo'
-import { runSucceeded, successDescription, successIsMeaningful } from '@/lib/sim/risk'
+import { runSucceeded, successDescription, successIsMeaningful, successRange } from '@/lib/sim/risk'
 import type { FailureSummary } from '@/lib/sim/failures'
 import { shortfallSubject } from '@/lib/insights/failureExplanation'
 import { TARGET_SUCCESS } from '@/lib/insights/proposals'
@@ -39,7 +39,7 @@ const TABS = ['monte-carlo', 'historical', 'stress'] as const
 function verdict(rate: number | undefined): { tone: StatTone; label: string } {
   if (rate === undefined) return { tone: 'default', label: 'Calculating…' }
   const pct = rate * 100
-  if (pct >= 85) return { tone: 'success', label: 'Strong' }
+  if (pct >= TARGET_PCT) return { tone: 'success', label: 'Strong' }
   if (pct >= 70) return { tone: 'warning', label: 'Some risk' }
   return { tone: 'danger', label: 'At risk' }
 }
@@ -73,13 +73,13 @@ export function RiskView() {
           value={testable ? pct(mc?.successRate) : 'n/a'}
           tone={testable ? verdict(mc?.successRate).tone : undefined}
           info={successDescription(compiledPlan)}
-          sub={testable ? <><Verdict rate={mc?.successRate} />{mc && <> · {mc.successes} of {mc.runs} runs</>}{risk.stale && <> · updating</>}</> : 'No withdrawals to test'}
+          sub={testable ? <><Verdict rate={mc?.successRate} />{mc && <> · {mc.successes} of {mc.runs} runs · 95% range {percent(successRange(mc.successes, mc.runs).low)}–{percent(successRange(mc.successes, mc.runs).high)}</>}{risk.stale && <> · updating</>}</> : 'No withdrawals to test'}
         />
         <Stat
           label="Historical success"
           value={testable ? pct(backtest?.successRate) : 'n/a'}
           tone={testable ? verdict(backtest?.successRate).tone : undefined}
-          info={`Your whole plan, from today, replayed through actual Canadian returns and inflation starting in each year from ${HISTORICAL_RANGE}. Plans longer than the data wrap around to the start of it.`}
+          info={`Your whole plan, from today, replayed through returns and inflation reconstructed from Statistics Canada data, starting in each year from ${HISTORICAL_RANGE}. Plans longer than the data wrap around to the start of it.`}
           sub={<><Verdict rate={backtest?.successRate} />{backtest && <> · {backtest.windows.filter(w => w.success).length} of {backtest.windows.length} start years</>}</>}
         />
         <Stat
@@ -231,7 +231,8 @@ function MonteCarloCard() {
 
 function HistoricalCard() {
   const risk = useRiskAnalysis()
-  const backtest = risk.backtest
+  const [anchor, setAnchor] = useState<'plan' | 'retirement'>('plan')
+  const backtest = anchor === 'retirement' ? risk.retirementBacktest : risk.backtest
   const [view, setView] = useState<'chart' | 'table'>('chart')
   const worst = useMemo(() => (backtest?.windows ?? []).slice().sort((a, b) => a.minReal - b.minReal).slice(0, 3), [backtest])
 
@@ -239,8 +240,13 @@ function HistoricalCard() {
     <Card>
       <CardHeader
         title="If your plan had started in a past year"
-        description={`Savings left at the end, in today's dollars. Each start year runs your whole plan from today, including the years before you retire. The data covers ${HISTORICAL_RANGE}; longer plans wrap around to its start.`}
-        actions={<SegmentedControl ariaLabel="Display" size="sm" value={view} onChange={setView} options={[{ value: 'chart', label: 'Chart' }, { value: 'table', label: 'Table' }]} />}
+        description={`Savings left at the end, in today's dollars. ${anchor === 'retirement' ? 'Your savings grow at expected returns until retirement, then each start year replays from there.' : 'Each start year runs your whole plan from today, including the years before you retire.'} The data covers ${HISTORICAL_RANGE}; longer plans wrap around to its start.`}
+        actions={
+          <div className="flex flex-wrap gap-2">
+            <SegmentedControl ariaLabel="Start of replay" size="sm" value={anchor} onChange={setAnchor} options={[{ value: 'plan', label: 'From today' }, { value: 'retirement', label: 'From retirement' }]} />
+            <SegmentedControl ariaLabel="Display" size="sm" value={view} onChange={setView} options={[{ value: 'chart', label: 'Chart' }, { value: 'table', label: 'Table' }]} />
+          </div>
+        }
       />
       {!backtest ? (
         <p className="text-sm text-fg-muted">Running backtest…</p>
@@ -301,7 +307,7 @@ function StressCard() {
   return (
     <Card padding="none">
       <div className="p-4 sm:p-5">
-        <CardHeader className="mb-0" title="Market shocks early in retirement" description="Historical crashes replayed in your first years of retirement, with average markets otherwise." />
+        <CardHeader className="mb-0" title="Stress tests" description="Historical crashes replayed in your first years of retirement with average markets otherwise, and living longer than planned." />
       </div>
       <div className="overflow-x-auto border-t border-border">
         <table className={cn(table.table, 'min-w-[560px]')}>

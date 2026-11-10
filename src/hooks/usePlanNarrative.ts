@@ -1,9 +1,8 @@
-import { giftsAfterRetirement } from '@/lib/calculations'
 import { usePeople } from '@/contexts/PeopleContext'
 import { usePlanStore } from '@/contexts/PlanStoreContext'
 import { useAssumptions } from '@/contexts/AssumptionsContext'
 import { useProjectionContext } from '@/contexts/ProjectionContext'
-import { useRetirementGoal } from '@/hooks/useRetirementGoal'
+import { usePlanOutlook } from '@/hooks/usePlanOutlook'
 import { buildPlanNarrative } from '@/lib/narrative'
 import { jurisdictionLabel } from '@/lib/tax'
 
@@ -13,25 +12,7 @@ export function usePlanNarrative() {
   const assumptions = useAssumptions()
   const projection = useProjectionContext()
 
-  const totalGuaranteedPension =
-    projection.totalAnnualPension + projection.totalAnnualCpp + projection.totalAnnualOas
-
-  const goal = useRetirementGoal({
-    currentProjectionData: projection.currentProjectionData,
-    annualSpendingTarget: projection.retirementSpendingTarget,
-    annualPension: totalGuaranteedPension,
-    guaranteedIncomeSchedule: projection.guaranteedIncomeSchedule,
-    propertySaleSchedule: projection.propertySaleSchedule,
-    withdrawalRate: assumptions.withdrawalRate,
-    yearsToRetirement: projection.yearsToRetirement,
-    expectedReturn: assumptions.expectedReturn,
-    inflationRate: assumptions.inflationRate,
-    currentAnnualContributions: projection.totalAnnualContributions,
-    currentPortfolio: projection.totalPortfolio,
-    showRealValues: assumptions.showRealValues,
-    plannedGifts: giftsAfterRetirement(assumptions.plannedGifts, projection.householdRetirementAge),
-    effectiveTaxRate: projection.retirementTax?.effectiveRrspTaxRate ?? 0,
-  })
+  const { goal, outlook } = usePlanOutlook()
 
   const tax = projection.retirementTax
   const effectiveTaxRate = tax?.effectiveRrspTaxRate ?? 0
@@ -70,6 +51,8 @@ export function usePlanNarrative() {
     afterTaxAnnualIncome: tax?.afterTaxIncome ?? goal.afterTaxProjectedAnnualIncome,
     guaranteedAnnualIncome,
     portfolioWithdrawal,
+    onTrack: outlook.onTrack,
+    needsTarget: outlook.needsTarget,
     progress,
     gap,
     additionalAnnualSavings,

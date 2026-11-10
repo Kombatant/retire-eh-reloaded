@@ -1,7 +1,7 @@
-import type { PlanV2 } from '@/lib/plan/schema'
+import type { PlanV2, TimePoint } from '@/lib/plan/schema'
 import { compilePlan } from '@/lib/sim/compile'
 import { simulate } from '@/lib/sim/simulate'
-import { deterministicPath } from '@/lib/sim/paths/deterministic'
+import { planPath } from '@/lib/sim/paths/deterministic'
 import { runSucceeded } from '@/lib/sim/risk'
 import { resolveYear } from '@/lib/plan/time'
 
@@ -14,7 +14,7 @@ import { resolveYear } from '@/lib/plan/time'
 function succeeds(plan: PlanV2, startYear: number, simpleTarget?: number): boolean {
   const compiled = compilePlan({ ...plan, drawdown: { ...plan.drawdown, strategy: { kind: 'expenses' } } }, { startYear })
   const c = simpleTarget === undefined ? compiled : { ...compiled, simpleSpendingTarget: simpleTarget }
-  return runSucceeded(simulate(c, deterministicPath(c.years, c.expectedReturnPct, c.inflationPct)))
+  return runSucceeded(simulate(c, planPath(c)))
 }
 
 // Smallest k in [lo, hi] for which test(k) holds. A linear scan, because dated
@@ -31,22 +31,30 @@ export function withRetirementIn(plan: PlanV2, year: number): PlanV2 {
   }
 }
 
-// Stops contributions at `year` at the latest: one already due to end sooner
-// keeps its own end date.
+// Stops employee-funded saving at `year` at the latest: one already due to end
+// sooner keeps its own end date. ESPP purchases stop too, as does saving surplus
+// cash, which has no end date of its own and so is off for the whole test.
 export function withContributionsStoppingIn(plan: PlanV2, year: number, startYear = year): PlanV2 {
   const retirementYear = (ownerId: string) => {
     const owner = plan.people.find(p => p.id === ownerId)
     return owner ? owner.birthYear + owner.retirementAge : year
   }
+  const stoppingAt = (to: TimePoint | undefined, ownerId: string): TimePoint => ({
+    kind: 'year',
+    year: Math.min(resolveYear(to, plan.people, startYear, retirementYear(ownerId)), year),
+  })
   return {
     ...plan,
-    accounts: plan.accounts.map(a => ({
-      ...a,
-      contributions: a.contributions.map(rule => {
-        const existing = resolveYear(rule.to, plan.people, startYear, retirementYear(a.ownerId))
-        return { ...rule, to: { kind: 'year' as const, year: Math.min(existing, year) } }
-      }),
-    })),
+    expenses: { ...plan.expenses, surplusPolicy: 'ignore' },
+    accounts: plan.accounts.map(a => {
+      const contributions = a.contributions.map(rule => ({ ...rule, to: stoppingAt(rule.to, a.ownerId) }))
+      if (a.type !== 'STOCK') return { ...a, contributions }
+      return {
+        ...a,
+        contributions,
+        holdings: a.holdings.map(h => (h.espp ? { ...h, espp: { ...h.espp, to: stoppingAt(h.espp.to, a.ownerId) } } : h)),
+      }
+    }),
   }
 }
 

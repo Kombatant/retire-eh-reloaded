@@ -2,6 +2,7 @@ import { useEffect, useSyncExternalStore } from 'react'
 import { usePlanStore } from '@/contexts/PlanStoreContext'
 import type { PlanV2 } from '@/lib/plan/schema'
 import { runRiskJob, type RiskUpdate } from '@/lib/sim/riskJob'
+import { MODEL_VERSION } from '@/lib/sim/funding'
 
 const DEBOUNCE_MS = 300
 // Without a Worker (tests, very old browsers) run a small synchronous sample.
@@ -62,7 +63,12 @@ function receive(event: MessageEvent<RiskUpdate & { id: number }>) {
 function getWorker(): Worker | null {
   if (typeof Worker === 'undefined') return null
   if (!worker) {
-    worker = new Worker(new URL('../workers/sim.worker.ts', import.meta.url), { type: 'module' })
+    // Some environments refuse a Worker outright; the small sample runs instead.
+    try {
+      worker = new Worker(new URL('../workers/sim.worker.ts', import.meta.url), { type: 'module' })
+    } catch {
+      return null
+    }
     worker.addEventListener('message', receive)
     worker.addEventListener('error', () => {
       // A crashed worker may not recover; the next request starts a new one.
@@ -80,8 +86,13 @@ function start(key: string, plan: PlanV2, nowYear: number) {
   activeKey = key
   const w = getWorker()
   if (w) {
-    w.postMessage({ id, plan, startYear: nowYear })
-    return
+    try {
+      w.postMessage({ id, plan, startYear: nowYear })
+      return
+    } catch {
+      w.terminate()
+      worker = null
+    }
   }
   let last: RiskUpdate | null = null
   runRiskJob(plan, nowYear, update => { last = update }, { maxRuns: FALLBACK_RUNS }).then(() => {
@@ -133,7 +144,7 @@ export interface RiskState extends Partial<RiskUpdate> {
 // computed off the main thread and streamed as batches complete.
 export function useRiskAnalysis(): RiskState {
   const { activePlan, nowYear } = usePlanStore()
-  const key = JSON.stringify(activePlan) + nowYear
+  const key = `${MODEL_VERSION}:${JSON.stringify(activePlan)}${nowYear}`
   const current = useSyncExternalStore(subscribe, getState)
 
   useEffect(() => request(key, activePlan, nowYear), [key, activePlan, nowYear])

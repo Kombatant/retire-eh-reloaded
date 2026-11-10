@@ -3,7 +3,6 @@ import { planSchema, type PlanV2, type PlanV2Input, type ProvinceCode } from '@/
 import { createDefaultPlan } from '@/lib/plan/defaults'
 import { simulatePlan } from '@/lib/sim'
 import { computeIncomeTax, emptyIncome } from '@/lib/tax/personal'
-import { TAX_2026 } from '@/lib/tax/data/2026'
 
 const YEAR = 2026
 
@@ -76,7 +75,7 @@ describe('unified engine with v2 rules', () => {
     const row = result.rows[0]
     expect(row.phase).toBe('drawdown')
     expect(row.gis).toBeGreaterThan(5000)
-    expect(row.gis).toBeLessThan(TAX_2026.gis.single.maxAnnual)
+    expect(row.gis).toBeLessThan(1138.9 * 12)
     expect(row.guaranteedIncome).toBeCloseTo(row.people[0].cpp + row.people[0].oas + row.gis, 6)
   })
 
@@ -86,8 +85,8 @@ describe('unified engine with v2 rules', () => {
       accounts: [{ id: 't', ownerId: 'a', type: 'TFSA', balance: 500000 }],
     })
     const { result } = simulatePlan(p, { startYear: YEAR, inflationPct: 0 })
-    expect(result.rows[0].people[0].oas).toBeCloseTo(9024 * 0.75, 2)
-    expect(result.rows[1].people[0].oas).toBeCloseTo(9024 * 0.75 * 1.1, 2)
+    expect(result.rows[0].people[0].oas).toBeCloseTo(9150 * 0.75, 2)
+    expect(result.rows[1].people[0].oas).toBeCloseTo(9150 * 0.75 * 1.1, 2)
   })
 
   it('applies the person’s province', () => {

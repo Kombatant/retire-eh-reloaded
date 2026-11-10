@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { usePlanStore } from '@/contexts/PlanStoreContext'
 import type { PlanV2 } from '@/lib/plan/schema'
+import { MODEL_VERSION } from '@/lib/sim/funding'
 
 const DEBOUNCE_MS = 300
 // Without a Worker (tests, very old browsers) run a small synchronous sample.
@@ -31,7 +32,7 @@ function remember<U>(cache: Map<string, U>, key: string, value: U) {
 // fresh worker, so cancelling is terminating.
 export function usePlanJob<U extends { done: boolean }>(job: PlanJob<U>): PlanJobState<U> {
   const { activePlan, nowYear } = usePlanStore()
-  const key = JSON.stringify(activePlan) + nowYear
+  const key = `${MODEL_VERSION}:${JSON.stringify(activePlan)}${nowYear}`
   const [live, setLive] = useState<{ key: string; update?: U; error?: string } | null>(null)
 
   useEffect(() => {
@@ -47,17 +48,25 @@ export function usePlanJob<U extends { done: boolean }>(job: PlanJob<U>): PlanJo
       if (!cancelled) setLive({ key, error: job.failedMessage })
     }
     const timer = setTimeout(() => {
+      const runInline = () => job.runInline(activePlan, nowYear, accept, { maxRuns: FALLBACK_RUNS, shouldStop: () => cancelled }).catch(fail)
       if (typeof Worker === 'undefined') {
-        job.runInline(activePlan, nowYear, accept, { maxRuns: FALLBACK_RUNS, shouldStop: () => cancelled }).catch(fail)
+        void runInline()
         return
       }
-      worker = job.createWorker()
-      worker.addEventListener('message', (event: MessageEvent<U | { error: true }>) => {
-        if ('error' in event.data) fail()
-        else accept(event.data)
-      })
-      worker.addEventListener('error', fail)
-      worker.postMessage({ plan: activePlan, startYear: nowYear })
+      // Some environments refuse a Worker outright, instead of failing later.
+      try {
+        worker = job.createWorker()
+        worker.addEventListener('message', (event: MessageEvent<U | { error: true }>) => {
+          if ('error' in event.data) fail()
+          else accept(event.data)
+        })
+        worker.addEventListener('error', fail)
+        worker.postMessage({ plan: activePlan, startYear: nowYear })
+      } catch {
+        worker?.terminate()
+        worker = null
+        void runInline()
+      }
     }, DEBOUNCE_MS)
     return () => {
       cancelled = true

@@ -25,6 +25,7 @@ const base: PlanNarrativeInput = {
   afterTaxAnnualIncome: 144079,
   guaranteedAnnualIncome: 124248,
   portfolioWithdrawal: 50244,
+  onTrack: true,
   progress: 100,
   gap: -756106,
   additionalAnnualSavings: 0,
@@ -73,7 +74,7 @@ describe('buildPlanNarrative', () => {
     expect(result.paragraphs[0]).toContain("today's dollars")
     expect(result.paragraphs[1]).toContain('$1,456,106')
     expect(result.paragraphs[1]).toContain('$756,106 above')
-    expect(result.paragraphs[1]).toContain('planned gifts')
+    expect(result.paragraphs[1]).toContain('one-time costs')
     expect(result.paragraphs[2]).toContain('$174,492')
     expect(result.paragraphs[2]).toContain('$144,079')
     expect(result.paragraphs[2]).toContain('OAS clawback')
@@ -85,6 +86,7 @@ describe('buildPlanNarrative', () => {
       progress: 95,
       gap: 50000,
       additionalAnnualSavings: 10000,
+      onTrack: false,
     })
     expect(result.status).toBe('close')
     expect(result.headline).toBe("You're close")
@@ -100,6 +102,7 @@ describe('buildPlanNarrative', () => {
       additionalAnnualSavings: 25000,
       taxTotal: 0,
       oasClawback: 0,
+      onTrack: false,
     })
     expect(result.status).toBe('off-track')
     expect(result.headline).toBe("There's a gap to close")
@@ -128,6 +131,7 @@ describe('buildPlanNarrative', () => {
       progress: 50,
       gap: 250000,
       additionalAnnualSavings: 0,
+      onTrack: false,
     })
     expect(result.paragraphs[2]).toContain('Retiring later')
   })

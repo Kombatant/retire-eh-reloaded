@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { renderHook } from '@testing-library/react'
 import { PlanStoreProvider } from '@/contexts/PlanStoreContext'
 import { ProjectionProvider, useProjectionContext } from '@/contexts/ProjectionContext'
-import { OAS_MAX_ANNUAL_2026 } from '@/lib/tax'
+import { TAX_2026 } from '@/lib/tax/data/2026'
 
 const person = {
   id: '1',
@@ -19,7 +19,7 @@ const person = {
   ],
 }
 
-const expectedOas = OAS_MAX_ANNUAL_2026 * 1.36
+const expectedOas = TAX_2026.oas.maxAt65 * 1.36
 
 function wrapper({ children }: { children: React.ReactNode }) {
   return (

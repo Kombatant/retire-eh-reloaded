@@ -21,8 +21,11 @@ export interface Snapshot {
 export interface Baseline {
   planId: string
   date: string
-  // Projected end-of-year portfolio (nominal) by calendar year.
+  // Projected start-of-year portfolio (nominal) by calendar year.
   portfolio: { year: number; value: number }[]
+  // Dated points, the first being the balance recorded when this was saved.
+  // Absent on older baselines, which are read as January 1 figures.
+  points?: { date: string; value: number }[]
 }
 
 export interface StoreState {
@@ -44,6 +47,7 @@ const baselineSchema = z.object({
   planId: z.string(),
   date: z.string(),
   portfolio: z.array(z.object({ year: z.number(), value: z.number() })),
+  points: z.array(z.object({ date: z.string(), value: z.number() })).optional(),
 })
 
 const storeFileSchema = z.object({
@@ -51,9 +55,24 @@ const storeFileSchema = z.object({
   activePlanId: z.string(),
   plans: z.array(z.unknown()),
   uiPrefs: uiPrefsSchema.prefault({}),
-  snapshots: z.array(snapshotSchema).catch([]).default([]),
-  baselines: z.array(baselineSchema).catch([]).default([]),
+  // Checked entry by entry, so one bad record doesn't cost the rest.
+  snapshots: z.unknown().optional(),
+  baselines: z.unknown().optional(),
 })
+
+function readEntries<T>(raw: unknown, schema: z.ZodType<T>, label: string, problems: string[]): T[] {
+  if (raw === undefined) return []
+  if (!Array.isArray(raw)) {
+    problems.push(`The saved ${label} could not be read.`)
+    return []
+  }
+  const entries = raw.flatMap(item => {
+    const parsed = schema.safeParse(item)
+    return parsed.success ? [parsed.data] : []
+  })
+  if (entries.length !== raw.length) problems.push(`Some ${label} could not be read.`)
+  return entries
+}
 
 type KeyValueStore = Pick<Storage, 'getItem'>
 
@@ -135,13 +154,35 @@ export function loadStore(storage: KeyValueStore, now: Date): StoreState {
   return loadStoreWithRecovery(storage, now).state
 }
 
+function freshState(now: Date): StoreState {
+  const plan = createDefaultPlan(now)
+  return { activePlanId: plan.id, plans: [plan], uiPrefs: uiPrefsSchema.parse({}), snapshots: [], baselines: [] }
+}
+
+// Browser storage, read lazily: merely touching `localStorage` throws when the
+// browser blocks it, and that has to be caught where it can be reported.
+export function browserStorage(): Pick<Storage, 'getItem' | 'setItem'> {
+  return {
+    getItem: key => localStorage.getItem(key),
+    setItem: (key, value) => localStorage.setItem(key, value),
+  }
+}
+
 // Loading never decides that data is disposable: anything it cannot use is
 // reported along with the original text, so the caller can keep a copy before
 // the next save replaces it.
-export function loadStoreWithRecovery(storage: KeyValueStore, now: Date): { state: StoreState; recovery: StoreRecovery | null } {
-  const raw = storage.getItem(STORE_KEY)
+// `unavailable` means storage can't be read at all: the session works but
+// nothing can be saved, and the caller must not try to overwrite anything.
+export function loadStoreWithRecovery(storage: KeyValueStore, now: Date): { state: StoreState; recovery: StoreRecovery | null; unavailable: boolean } {
+  let raw: string | null
+  try {
+    raw = storage.getItem(STORE_KEY)
+  } catch {
+    return { state: freshState(now), recovery: null, unavailable: true }
+  }
+  const storedRaw = raw
   const problems: string[] = []
-  const finish = (state: StoreState) => ({ state, recovery: raw !== null && problems.length > 0 ? { raw, problems } : null })
+  const finish = (state: StoreState) => ({ state, recovery: storedRaw !== null && problems.length > 0 ? { raw: storedRaw, problems } : null, unavailable: false })
 
   const json = readJson(storage, STORE_KEY)
   const stored = storeFileSchema.safeParse(json)
@@ -153,23 +194,17 @@ export function loadStoreWithRecovery(storage: KeyValueStore, now: Date): { stat
       if (!result.success) problems.push(`${planLabel(stored.data.plans[i], i)}: ${result.errors.join('; ')}`)
     })
     const plans = parsed.flatMap(r => (r.success ? [r.plan] : []))
-    const rawFile = json as { snapshots?: unknown; baselines?: unknown }
-    if (Array.isArray(rawFile.snapshots) && rawFile.snapshots.length !== stored.data.snapshots.length) {
-      problems.push('Some balance snapshots could not be read.')
-    }
-    if (Array.isArray(rawFile.baselines) && rawFile.baselines.length !== stored.data.baselines.length) {
-      problems.push('A saved baseline could not be read.')
-    }
+    const snapshots = readEntries(stored.data.snapshots, snapshotSchema, 'balance snapshots', problems)
+    const baselines = readEntries(stored.data.baselines, baselineSchema, 'saved baselines', problems)
     if (plans.length > 0) {
       const activePlanId = plans.some(p => p.id === stored.data.activePlanId) ? stored.data.activePlanId : plans[0].id
       const ids = new Set(plans.map(p => p.id))
-      return finish({
-        activePlanId,
-        plans,
-        uiPrefs: stored.data.uiPrefs,
-        snapshots: stored.data.snapshots.filter(snap => ids.has(snap.planId)),
-        baselines: stored.data.baselines.filter(b => ids.has(b.planId)),
-      })
+      const keptSnapshots = snapshots.filter(snap => ids.has(snap.planId))
+      const keptBaselines = baselines.filter(b => ids.has(b.planId))
+      if (keptSnapshots.length !== snapshots.length || keptBaselines.length !== baselines.length) {
+        problems.push('Some tracking data belongs to a plan that could not be read.')
+      }
+      return finish({ activePlanId, plans, uiPrefs: stored.data.uiPrefs, snapshots: keptSnapshots, baselines: keptBaselines })
     }
   }
 
@@ -187,8 +222,7 @@ export function loadStoreWithRecovery(storage: KeyValueStore, now: Date): { stat
     }
   }
 
-  const plan = createDefaultPlan(now)
-  return finish({ activePlanId: plan.id, plans: [plan], uiPrefs: uiPrefsSchema.parse({}), snapshots: [], baselines: [] })
+  return finish(freshState(now))
 }
 
 const recoveryEntrySchema = z.object({
@@ -199,8 +233,12 @@ const recoveryEntrySchema = z.object({
 })
 
 export function readRecoveryEntries(storage: Pick<Storage, 'getItem'>): RecoveryEntry[] {
-  const result = z.array(recoveryEntrySchema).safeParse(readJson(storage, RECOVERY_KEY))
-  return result.success ? result.data : []
+  try {
+    const result = z.array(recoveryEntrySchema).safeParse(readJson(storage, RECOVERY_KEY))
+    return result.success ? result.data : []
+  } catch {
+    return []
+  }
 }
 
 // Returns false when the copy could not be written. The caller must then not

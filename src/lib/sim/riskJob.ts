@@ -14,6 +14,8 @@ import {
 
 export interface RiskUpdate {
   backtest?: BacktestSummary
+  // The same history, starting from the first retirement year.
+  retirementBacktest?: BacktestSummary
   crashes?: CrashResult[]
   monteCarlo?: MonteCarloSummary
   progress: number // 0..1
@@ -32,8 +34,9 @@ export async function runRiskJob(
   opts: { maxRuns?: number; shouldStop?: () => boolean; yieldBetweenBatches?: () => Promise<void> } = {},
 ): Promise<void> {
   const backtest = runBacktest(plan, startYear)
+  const retirementBacktest = runBacktest(plan, startYear, 'retirement')
   const crashes = runCrashScenarios(plan, startYear)
-  onUpdate({ backtest, crashes, progress: 0, done: false })
+  onUpdate({ backtest, retirementBacktest, crashes, progress: 0, done: false })
 
   const c = compilePlan(plan, { startYear })
   const settings = settingsFromPlan(plan)
@@ -45,6 +48,7 @@ export async function runRiskJob(
     const done = from + RISK_BATCH >= runs
     onUpdate({
       backtest,
+      retirementBacktest,
       crashes,
       monteCarlo: summarizeRuns(c, acc.portfolios, acc.successes, acc.estates, acc.records),
       progress: Math.min(1, (from + RISK_BATCH) / runs),

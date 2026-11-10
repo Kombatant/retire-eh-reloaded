@@ -29,6 +29,31 @@ export function diagnosePlan(plan: PlanV2, now: Date): PlanDiagnostic[] {
     out.push(`The balance date "${plan.asOf}" is not a real date.`)
   } else if (Number(plan.asOf.slice(0, 4)) < now.getFullYear()) {
     out.push(`Balances were last updated on ${plan.asOf}, but the projection starts from them in ${now.getFullYear()}. Update them under Savings or Tracking.`)
+  } else if (!plan.asOf.endsWith('-01-01')) {
+    const year = Number(plan.asOf.slice(0, 4))
+    const datedThisYear = (from: TimePoint | undefined) => resolveYear(from, plan.people, year, year) === year
+    const oneTime = [
+      ...plan.incomes.filter(i => i.frequency === 'oneTime' && datedThisYear(i.from)).map(i => i.label || 'One-time income'),
+      ...plan.expenses.items.filter(e => e.frequency === 'oneTime' && datedThisYear(e.from)).map(e => e.label || 'One-time cost'),
+    ]
+    for (const label of oneTime) {
+      out.push(`"${label}" is dated ${year}. If it has already happened, it is in your balances; remove it or it will be counted again.`)
+    }
+  }
+
+  for (const person of plan.people) {
+    const age = now.getFullYear() - person.birthYear
+    if (person.lifeExpectancy <= age) out.push(`${person.name} is ${age}, at or past the plan's life expectancy of ${person.lifeExpectancy}.`)
+    else if (person.retirementAge > person.lifeExpectancy) out.push(`${person.name} retires at ${person.retirementAge}, after the plan's life expectancy of ${person.lifeExpectancy}.`)
+    if (person.room) {
+      for (const [type, room] of [['RRSP', person.room.rrsp], ['TFSA', person.room.tfsa]] as const) {
+        if (room === undefined) continue
+        const planned = plan.accounts
+          .filter(a => a.ownerId === person.id && a.type === type)
+          .reduce((total, a) => total + a.contributions.reduce((s, c) => s + (resolveYear(c.from, plan.people, now.getFullYear(), now.getFullYear()) <= now.getFullYear() ? c.amount : 0), 0), 0)
+        if (planned > room) out.push(`${person.name}'s planned ${type} contributions this year are more than the ${type} room entered; the excess goes to a non-registered account.`)
+      }
+    }
   }
 
   for (const income of plan.incomes) {
@@ -37,6 +62,19 @@ export function diagnosePlan(plan: PlanV2, now: Date): PlanDiagnostic[] {
   for (const account of plan.accounts) {
     if (account.ownerId === 'joint' && INDIVIDUAL_ONLY_ACCOUNTS.has(account.type)) {
       out.push(`${account.type} account "${account.label || account.id}" is set to joint, but these accounts have one owner. Withdrawal rules and tax may be wrong.`)
+    }
+  }
+
+  for (const account of plan.accounts) {
+    if (account.type === 'NONREG' && account.balance > 0 && !account.yields) {
+      out.push(`Non-registered account "${account.label || account.id}" has no yearly distributions set, so no tax is charged on them until it is sold. Add an estimate under Savings.`)
+    }
+  }
+
+  for (const account of plan.accounts) {
+    if (account.type !== 'STOCK' || account.ownerId !== 'joint') continue
+    if (account.holdings.some(h => h.espp || h.rsuGrants.length > 0)) {
+      out.push(`Stock account "${account.label || account.id}" is set to joint, so its RSUs and ESPP are left out. Give it one owner.`)
     }
   }
 

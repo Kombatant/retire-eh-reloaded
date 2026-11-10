@@ -13,8 +13,8 @@ export const pct1 = (rate: number) => `${(rate * 100).toFixed(1)}%`
 
 // What "short" is measured against; it differs by spending mode and strategy.
 export function shortfallSubject(c: CompiledPlan): string {
-  if (c.expenseMode === 'simple') return 'planned withdrawals'
   const kind = c.spendingStrategy.kind
+  if (c.expenseMode === 'simple') return kind === 'initialPct' || kind === 'expenses' ? 'income target' : 'planned withdrawals'
   return kind === 'expenses' || kind === 'initialPct' ? 'budget' : 'essential spending'
 }
 
@@ -34,7 +34,7 @@ export function failureCause(s: FailureSummary, averageMarketsFail: boolean): Fa
   if (s.limitedByStrategy * 2 >= s.failed) {
     return {
       title: 'Your withdrawals are set too low',
-      body: 'Your fixed withdrawal rate takes less each year than your budget needs, so years fall short while money is still in your accounts. The “Fund my spending” strategy under Withdrawals draws what the budget needs instead.',
+      body: 'Your fixed withdrawal rate takes less each year than your spending or income target needs, so years fall short while money is still in your accounts. The “Fund my spending” strategy under Withdrawals draws what is needed instead.',
       severe: true,
     }
   }
@@ -76,7 +76,7 @@ export function failureNotes(s: FailureSummary, subject: string, unit: string): 
   }
   // When it is most of the failures, the headline has already said this.
   if (s.limitedByStrategy > 0 && s.limitedByStrategy * 2 < s.failed) {
-    notes.push(`In ${count(s.limitedByStrategy)}, your fixed withdrawal rate took less than your budget needed while money was still in your accounts.`)
+    notes.push(`In ${count(s.limitedByStrategy)}, your fixed withdrawal rate took less than your spending or income target needed while money was still in your accounts.`)
   }
   if (s.beforeRetirement > 0) {
     notes.push(`In ${count(s.beforeRetirement)}, the first shortfall comes before retirement, while spending is more than earnings and available savings.`)

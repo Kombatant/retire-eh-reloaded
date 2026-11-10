@@ -169,7 +169,7 @@ describe('App smoke test', () => {
     const mix = screen.getByLabelText(/Investment mix of the new non-registered account/)
     fireEvent.change(mix, { target: { value: 'balanced' } })
     expect(mix).toHaveValue('balanced')
-    expect(screen.getByText('5.3% a year')).toBeInTheDocument()
+    expect(screen.getByText('5.1% a year')).toBeInTheDocument()
   })
 
   it('switches the theme for the whole app', () => {

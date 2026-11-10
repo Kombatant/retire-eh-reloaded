@@ -27,6 +27,12 @@ const sections: LearnSection[] = [
           The formula: <code className="rounded bg-surface-muted px-1.5 py-0.5 text-[13px] text-fg">Future Value = Present × (1 + rate)^years + contributions</code>
         </p>
         <p>
+          The projection starts from the date your balances were entered, so this calendar year counts only the part that is left: income, spending, saving and growth are prorated, one-time events are not, and tax assumes the year so far ran at a steady pace.
+        </p>
+        <p>
+          With a detailed budget, saving comes only from cash left after tax and spending; a year that can't afford its contributions saves less and says so. In simple mode there is no budget to measure that against, so contributions are assumed to come from outside the model.
+        </p>
+        <p>
           We also account for <strong className="text-fg">inflation</strong>. "Today's dollars" shows what your money can buy in today's terms, making it easier to understand.
         </p>
       </div>
@@ -78,6 +84,9 @@ const sections: LearnSection[] = [
           This is a guideline, not a guarantee. Actual needs may vary based on market performance and spending.
         </p>
         <p>
+          In this app the savings guideline is only indicative. Whether your plan is on track comes from the year-by-year simulation; the guideline counts recurring spending, spreads costs every few years, and reserves one-time costs and debts once.
+        </p>
+        <p>
           If you plan one-time gifts (e.g., helping kids with a down payment), enter them under <strong className="text-fg">Planned Gifts</strong> in the Plan tab. They're reserved from your retirement portfolio, so your sustainable withdrawal is based on what remains after setting that money aside.
         </p>
       </div>
@@ -114,6 +123,15 @@ const sections: LearnSection[] = [
         </div>
         <p>
           <strong className="text-fg">Strategy:</strong> Prioritize RRSP when your marginal tax rate is high, TFSA when it's lower.
+        </p>
+        <p>
+          For couples, the higher earner gets the spouse amount, and the age and pension amounts one spouse can't use move to the other. GIS and the Allowances follow the published tables and last year's income, or this year's if employment or pension income has dropped.
+        </p>
+        <p>
+          An FHSA closes by the end of its 15th year, the year you turn 71, or the year after a tax-free home purchase, whichever comes first. What is left rolls into your RRSP.
+        </p>
+        <p>
+          Contributions are kept within your room; anything over it goes to a non-registered account with no deduction. Without your real RRSP room, the app estimates it from new room each year, assuming nothing is carried forward, so enter your figure from your Notice of Assessment if you have unused room.
         </p>
         <p className="mt-2 pt-2 border-t border-border text-xs">
           <strong className="text-fg block mb-1">Pre-Tax vs. After-Tax Projections:</strong>
@@ -217,7 +235,7 @@ const sections: LearnSection[] = [
           <strong className="text-fg"> % of portfolio</strong>, <strong className="text-fg">guardrails (Guyton-Klinger)</strong> and <strong className="text-fg">VPW</strong> let spending rise and fall with markets; in a detailed budget they never cut below essential items.
         </p>
         <p>
-          You can convert an RRSP to a RRIF at any age, in whole or in part, but it must become a RRIF (or buy an annuity) by the end of the year you turn 71. From 65, RRIF payments qualify for the pension income credit and pension splitting, while plain RRSP withdrawals do not. A RRIF has a <strong className="text-fg">minimum withdrawal</strong> every year (about 5.3% at 72, rising to 20% at 95). Minimums you do not need are reinvested after tax. LIRAs unlock as LIFs (from 55) with both a minimum and a maximum.
+          You can convert an RRSP to a RRIF at any age, in whole or in part, but it must become a RRIF (or buy an annuity) by the end of the year you turn 71. From 65, RRIF payments qualify for the pension income credit and pension splitting, while plain RRSP withdrawals do not. A RRIF has a <strong className="text-fg">minimum withdrawal</strong> every year (about 5.3% at 72, rising to 20% at 95). Minimums you do not need are reinvested after tax. LIRAs unlock as LIFs (from 55) with both a minimum and a maximum, from published 2026 tables or the common provincial formula (Saskatchewan's is approximated by the common column). A LIRA counts as converted the first year it pays, and its minimums start the next year.
         </p>
         <p>
           An <strong className="text-fg">RRSP meltdown</strong> withdraws extra RRSP money in low-income years to fill a target tax bracket, then reinvests it (TFSA first). It can lower lifetime tax, reduce the OAS clawback later, and shrink the RRIF that is fully taxed at death.
@@ -238,7 +256,10 @@ const sections: LearnSection[] = [
           The returns you enter are <strong className="text-fg">long-run compounded rates</strong>, the same convention as FP Canada's projection guidelines. A loss takes a bigger gain to recover, so an investment that swings needs a higher average yearly return to compound at a given rate. Monte Carlo makes that adjustment using each investment's volatility: a typical run compounds at the rate you entered, and higher volatility widens the range of outcomes around it.
         </p>
         <p>
-          The <strong className="text-fg">historical backtest</strong> replays actual Canadian returns and inflation (1957–2015, derived from Statistics Canada tables) starting in each year. Plans longer than the data wrap around. Stress tests replay the 2008 crisis, the 2000–2002 tech crash and 1970s stagflation at the start of retirement.
+          The <strong className="text-fg">historical backtest</strong> replays Canadian returns and inflation reconstructed from Statistics Canada data (1957–2015; estimates, not exact index returns) starting in each year. Plans longer than the data wrap around. You can replay from today or from your first retirement year. Stress tests replay the 2008 crisis, the 2000–2002 tech crash and 1970s stagflation at the start of retirement, and test living 5 and 10 years longer.
+        </p>
+        <p>
+          In simple mode a fixed-rate plan is tested against your income target, not just whether the fixed withdrawal could be made. A shortfall means a year with more than a dollar unfunded in today's dollars. The range shown beside a success rate is the simulation's own sampling error, at 95% confidence.
         </p>
         <p>
           A high success rate is reassuring but not a guarantee; most plans can be adjusted along the way. Many planners aim for 80–90% and revisit the plan every year.
@@ -256,7 +277,7 @@ const sections: LearnSection[] = [
           When a spouse dies, registered accounts and TFSAs can roll over to the survivor tax-free. The survivor keeps their own benefits, a share of a DB pension (the survivor %), and a CPP survivor's pension (60% of the deceased's pension at 65+, within the CPP maximum). From then on the survivor files a single return, without pension splitting.
         </p>
         <p>
-          At the last death, RRSPs and RRIFs are added to income on the final return and other investments are treated as sold, so capital gains are taxed (a principal residence is exempt). The estimate puts everything on one return, even when a couple's life expectancies end in the same year, because a spousal rollover leaves it all with the survivor. Provincial probate fees may also apply. The estate card shows what is left for heirs.
+          At the last death, RRSPs and RRIFs are added to income on the final return and other investments are treated as sold, so capital gains are taxed (a principal residence is exempt). The estimate puts everything on one return, even when a couple's life expectancies end in the same year, because a spousal rollover leaves it all with the survivor. Provincial probate fees may also apply; they are an estimate on the whole estate before income tax, since what really passes through a will depends on ownership and beneficiaries. The estate card shows what is left for heirs.
         </p>
       </div>
     )
@@ -273,7 +294,7 @@ const sections: LearnSection[] = [
         <ul className="space-y-2">
           <li className="flex items-start gap-2">
             <span className="text-fg-muted">•</span>
-            <span><strong className="text-fg">7% expected return (nominal):</strong> Raw annual return before inflation. After 2.5% inflation, the real return is about 4.4%.</span>
+            <span><strong className="text-fg">4.5% expected return (nominal, after fees):</strong> A 60/40 portfolio at FP Canada's 2026 guidelines, about 5.06%, less about 0.5% for fees. Saved plans keep the assumptions they already have.</span>
           </li>
           <li className="flex items-start gap-2">
             <span className="text-fg-muted">•</span>

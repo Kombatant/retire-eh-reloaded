@@ -59,7 +59,7 @@ export function DashboardView() {
           tone={o.lasts.wholePlan ? 'default' : 'danger'}
           sub={o.lasts.wholePlan
             ? (o.estateValue !== null ? `${moneyCompact(o.estateValue)} left to heirs` : 'Whole plan funded')
-            : `Savings run out in ${o.lasts.year}`}
+            : o.lasts.note}
         />
       </div>
 
@@ -91,11 +91,11 @@ function StatusHero() {
         <div className="min-w-0 flex-1">
           <div className={cn('flex items-center gap-2 text-lg font-semibold', onTrack ? 'text-success' : 'text-warning')}>
             {onTrack ? <CheckCircle2 className="h-5 w-5" aria-hidden /> : <AlertTriangle className="h-5 w-5" aria-hidden />}
-            {onTrack ? "You're on track" : 'Your plan falls short of your goal'}
+            {o.outlook.needsTarget ? 'Set an income target' : onTrack ? "You're on track" : 'Your plan runs short'}
           </div>
           <p className="mt-1 text-sm text-fg-secondary">
             From age {o.retirementAge}, your plan provides <span className="font-medium text-fg">{money(o.outlook.preTaxIncome)}</span> a year
-            before tax (<span className="font-medium text-fg">{money(o.outlook.afterTaxIncome)}</span> after tax). Your goal is{' '}
+            before tax (<span className="font-medium text-fg">{money(o.outlook.afterTaxIncome)}</span> after tax), levelized over retirement. Your goal is{' '}
             <span className="font-medium text-fg">{money(target)}</span> {o.goalIsAfterTax ? 'after tax' : 'before tax'}.
           </p>
           <div className="mt-4 max-w-xl">
@@ -117,7 +117,7 @@ function StatusHero() {
               </>
             )}
           </button>
-          {!onTrack && o.outlook.extraSavingsNeeded > 0 && (
+          {!onTrack && !o.outlook.needsTarget && o.outlook.extraSavingsNeeded > 0 && (
             <Button size="sm" variant="primary" onClick={() => navigate({ view: 'plan', sub: 'savings' })}>
               Save {money(o.outlook.extraSavingsNeeded)} more a year <ArrowRight className="h-3.5 w-3.5" aria-hidden />
             </Button>

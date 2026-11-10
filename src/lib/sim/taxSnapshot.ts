@@ -43,7 +43,7 @@ export function buildRetirementTaxSnapshot(
   result: SimResult,
   showRealValues: boolean,
 ): RetirementTaxSnapshot | null {
-  const row = result.rows[c.drawdownStartOffset]
+  const row = result.rows[c.headlineOffset]
   if (!row || !result.snapshot || c.people.length === 0) return null
   const scale = showRealValues ? 1 / row.cpi : 1
 
@@ -80,7 +80,7 @@ export function buildRetirementTaxSnapshot(
     totalTax,
     oasClawback: row.oasClawback * scale,
     preTaxIncome,
-    afterTaxIncome: Math.max(0, preTaxIncome - totalTax),
+    afterTaxIncome: row.afterTaxIncome * scale,
     averageTaxRate: preTaxIncome > 0 ? (totalTax / preTaxIncome) * 100 : 0,
     effectiveRrspTaxRate: taxableWithdrawal > 0 ? Math.min(100, (rrspTax / taxableWithdrawal) * 100) : 0,
     topMarginalRate: perPerson.reduce((max, p) => Math.max(max, p.marginalRate), 0),

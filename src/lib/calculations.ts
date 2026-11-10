@@ -1,4 +1,4 @@
-import { OAS_MAX_ANNUAL_2026 } from '@/lib/tax'
+import { TAX_2026 } from '@/lib/tax/data/2026'
 import type { ProvinceCode } from '@/lib/plan/schema'
 import type { ProjectionDataPoint } from '@/types/household'
 
@@ -60,10 +60,20 @@ export function clampCppStartAge(startAge: number, maxStartAge = CPP_MAX_START_A
 // Standard adjustments: -0.6% per month before 65, +0.7% per month after 65.
 // The QPP's early reduction is 0.5-0.6% depending on the pension, so 0.6% is
 // the conservative value. The entered amount is the age-65 baseline.
-export function cppAdjustmentFactor(startAge: number, maxStartAge = CPP_MAX_START_AGE): number {
+// The QPP early reduction runs from 0.5% to 0.6% a month with the size of the
+// pension, against the base-plan maximum (R-9 s. 120.1, $1,441.25 a month in
+// 2026); the CPP is a flat 0.6%. `maxStartAge` of 72 identifies the QPP, as
+// elsewhere. The pension entered includes the additional plan, which slightly
+// overstates the ratio and so the reduction.
+const QPP_MAX_BASE_ANNUAL_2026 = 1441.25 * 12
+
+export function cppAdjustmentFactor(startAge: number, maxStartAge = CPP_MAX_START_AGE, annualAt65?: number): number {
   const age = clampCppStartAge(startAge, maxStartAge)
   if (age < CPP_BASELINE_AGE) {
-    return 1 - 0.006 * 12 * (CPP_BASELINE_AGE - age)
+    const perMonth = maxStartAge === QPP_MAX_START_AGE && annualAt65 !== undefined
+      ? 0.005 + 0.001 * Math.min(1, Math.max(0, annualAt65) / QPP_MAX_BASE_ANNUAL_2026)
+      : 0.006
+    return 1 - perMonth * 12 * (CPP_BASELINE_AGE - age)
   }
   if (age > CPP_BASELINE_AGE) {
     return 1 + 0.007 * 12 * (age - CPP_BASELINE_AGE)
@@ -80,7 +90,7 @@ export function getCppIncomeAtAge(
 ): number {
   const resolvedStartAge = clampCppStartAge(startAge ?? CPP_BASELINE_AGE, maxStartAge)
   if (age < resolvedStartAge) return 0
-  return (annualCppAt65 || 0) * cppAdjustmentFactor(resolvedStartAge, maxStartAge)
+  return (annualCppAt65 || 0) * cppAdjustmentFactor(resolvedStartAge, maxStartAge, annualCppAt65 || 0)
 }
 
 export const OAS_BASELINE_AGE = 65
@@ -134,7 +144,7 @@ export function buildGuaranteedIncomeSchedule(params: {
     householdRetirementAge,
     yearsToRetirement,
     endAge = RETIREMENT_END_AGE,
-    oasAnnualAt65 = OAS_MAX_ANNUAL_2026,
+    oasAnnualAt65 = TAX_2026.oas.maxAt65,
   } = params
 
   if (people.length === 0 || endAge < householdRetirementAge) return []
@@ -211,12 +221,16 @@ export function calculateRetirementGoal(params: {
   guaranteedIncomeSchedule?: number[]
   // Today's dollars, by year from the retirement year.
   propertySaleSchedule?: number[]
+  // Today's dollars: one-time costs (discounted to retirement) and debt owed
+  // then, held back from the income the savings can support.
+  reserveAtRetirement?: number
+  // Today's dollars to retirement-year dollars. Defaults to whole years of
+  // inflation; the simulation's own index accounts for a partial first year.
+  priceIndexAtRetirement?: number
   withdrawalRate: number
   yearsToRetirement: number
   expectedReturn: number
   inflationRate: number
-  currentAnnualContributions: number
-  currentPortfolio: number
   showRealValues?: boolean
   plannedGifts?: PlannedGiftLite[]
   effectiveTaxRate?: number
@@ -233,6 +247,8 @@ export function calculateRetirementGoal(params: {
     inflationRate,
     showRealValues = true,
     plannedGifts = [],
+    reserveAtRetirement = 0,
+    priceIndexAtRetirement,
     effectiveTaxRate = 0,
   } = params
 
@@ -240,14 +256,15 @@ export function calculateRetirementGoal(params: {
   // to retirement-age dollars so progress stays comparable to the nominal portfolio.
   const inflationFactor = showRealValues
     ? 1
-    : Math.pow(1 + inflationRate / 100, Math.max(0, yearsToRetirement))
+    : priceIndexAtRetirement ?? Math.pow(1 + inflationRate / 100, Math.max(0, yearsToRetirement))
 
   const portfolioAtRetirement = getPortfolioAtRetirement(currentProjectionData)
   const propertySaleValue = valueAtRetirement(propertySaleSchedule, withdrawalRate) * inflationFactor
   const fundsForRetirement = portfolioAtRetirement + propertySaleValue
   // Gifts are reserved as a separate pot withdrawn from the retirement portfolio.
-  const giftTotal = getGiftTotal(plannedGifts, yearsToRetirement, showRealValues, inflationRate)
-  const portfolioAfterGifts = getPortfolioAfterGifts(fundsForRetirement, plannedGifts, yearsToRetirement, showRealValues, inflationRate)
+  const reserve = reserveAtRetirement * inflationFactor
+  const giftTotal = getGiftTotal(plannedGifts, 0, true, inflationRate) * inflationFactor + reserve
+  const portfolioAfterGifts = Math.max(0, fundsForRetirement - giftTotal)
   // A delayed CPP/OAS start means the retirement-year benefit can be zero even
   // though the household will receive it later. Levelizing the full stream
   // values those future benefits without changing the existing goal formula.
@@ -266,7 +283,7 @@ export function calculateRetirementGoal(params: {
   const gap = requiredPortfolio - fundsForRetirement
 
   const additionalAnnualSavings = yearsToRetirement > 0
-    ? calculateAdditionalAnnualSavings(gap, yearsToRetirement, expectedReturn, inflationRate)
+    ? calculateAdditionalAnnualSavings(gap / inflationFactor, yearsToRetirement, expectedReturn, inflationRate)
     : 0
 
   // Calculate after-tax metrics (deducting the estimated lifetime tax on the RRSP
@@ -278,7 +295,7 @@ export function calculateRetirementGoal(params: {
   const afterTaxProgress = requiredPortfolio > 0 ? (afterTaxPortfolioAtRetirement / requiredPortfolio) * 100 : noSavingsNeededProgress
   const afterTaxGap = requiredPortfolio - afterTaxPortfolioAtRetirement
   const afterTaxAdditionalAnnualSavings = yearsToRetirement > 0
-    ? calculateAdditionalAnnualSavings(afterTaxGap, yearsToRetirement, expectedReturn, inflationRate)
+    ? calculateAdditionalAnnualSavings(afterTaxGap / inflationFactor, yearsToRetirement, expectedReturn, inflationRate)
     : 0
 
   return {
@@ -310,8 +327,8 @@ export function calculateRetirementGoalWithIncome(
   params: Parameters<typeof calculateRetirementGoal>[0],
 ): RetirementGoalWithIncome {
   const goal = calculateRetirementGoal(params)
-  const { withdrawalRate, yearsToRetirement, inflationRate, showRealValues = true } = params
-  const inflationFactor = showRealValues ? 1 : Math.pow(1 + inflationRate / 100, Math.max(0, yearsToRetirement))
+  const { withdrawalRate, yearsToRetirement, inflationRate, showRealValues = true, priceIndexAtRetirement } = params
+  const inflationFactor = showRealValues ? 1 : priceIndexAtRetirement ?? Math.pow(1 + inflationRate / 100, Math.max(0, yearsToRetirement))
   const projectedGuaranteedIncome = goal.levelizedGuaranteedIncome * inflationFactor
   return {
     ...goal,
@@ -320,6 +337,10 @@ export function calculateRetirementGoalWithIncome(
   }
 }
 
+// Yearly saving, in today's dollars, that closes a gap in today's dollars. An
+// indicative figure. Saving rises with inflation, so the money earns the real
+// return: an effective monthly rate, which also works when it is zero or
+// negative (a negative rate means each dollar saved loses value).
 function calculateAdditionalAnnualSavings(
   gap: number,
   yearsToRetirement: number,
@@ -327,12 +348,8 @@ function calculateAdditionalAnnualSavings(
   inflationRate: number,
 ): number {
   if (gap <= 0 || yearsToRetirement <= 0) return 0
-
-  const monthlyNominalRate = expectedReturn / 100 / 12
-  const monthlyInflationRate = inflationRate / 100 / 12
   const months = yearsToRetirement * 12
-  const monthlyRealRate = monthlyNominalRate - monthlyInflationRate
-  if (monthlyRealRate <= 0) return Math.round(gap / yearsToRetirement)
-  const monthlyRealSavings = gap * monthlyRealRate / ((1 + monthlyRealRate) ** months - 1)
-  return Math.round(monthlyRealSavings * 12)
+  const monthlyRealRate = Math.pow((1 + expectedReturn / 100) / (1 + inflationRate / 100), 1 / 12) - 1
+  if (Math.abs(monthlyRealRate) < 1e-9) return Math.round(gap / yearsToRetirement)
+  return Math.round((gap * monthlyRealRate / ((1 + monthlyRealRate) ** months - 1)) * 12)
 }

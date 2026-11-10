@@ -14,11 +14,13 @@ export interface MonteCarloSettings {
 // Lognormal annual return with the given arithmetic mean and standard
 // deviation (fractions). Lognormal keeps returns above −100% and reproduces
 // the right skew of compounded returns.
-export function lognormalReturn(mean: number, sd: number, z: number): number {
-  if (sd <= 0) return mean
+// `period` is the share of a year the return covers: drift scales with it and
+// volatility with its square root, so part of a year compounds like the whole.
+export function lognormalReturn(mean: number, sd: number, z: number, period = 1): number {
+  if (sd <= 0) return period >= 1 ? mean : Math.pow(1 + mean, period) - 1
   const sigma2 = Math.log(1 + (sd * sd) / ((1 + mean) * (1 + mean)))
   const mu = Math.log(1 + mean) - sigma2 / 2
-  return Math.exp(mu + Math.sqrt(sigma2) * z) - 1
+  return Math.exp(mu * period + Math.sqrt(sigma2 * period) * z) - 1
 }
 
 // Return inputs are long-run compounded (geometric) rates: what projections
@@ -61,6 +63,7 @@ export function monteCarloPath(c: CompiledPlan, s: MonteCarloSettings, rng: Rng)
   const portfolioMean = arithmeticFromCompounded(c.expectedReturnPct / 100, s.portfolioVolPct / 100)
 
   for (let t = 0; t < years; t++) {
+    const period = t === 0 ? c.firstPeriodFraction : 1
     const e1 = normal(rng)
     const e2 = normal(rng)
     const e3 = normal(rng)
@@ -68,16 +71,16 @@ export function monteCarloPath(c: CompiledPlan, s: MonteCarloSettings, rng: Rng)
     const zBond = L21 * e1 + L22 * e2
     const zCash = L32 * e2 + L33 * e3
     const zPortfolio = (0.6 * zEquity + 0.4 * zBond) / BLEND_SD
-    equity[t] = lognormalReturn(equityMean, equityVol, zEquity)
-    bond[t] = lognormalReturn(bondMean, s.bondVolPct / 100, zBond)
-    cash[t] = lognormalReturn(cashMean, s.cashVolPct / 100, zCash)
-    nominalReturn[t] = lognormalReturn(portfolioMean, s.portfolioVolPct / 100, zPortfolio)
+    equity[t] = lognormalReturn(equityMean, equityVol, zEquity, period)
+    bond[t] = lognormalReturn(bondMean, s.bondVolPct / 100, zBond, period)
+    cash[t] = lognormalReturn(cashMean, s.cashVolPct / 100, zCash, period)
+    nominalReturn[t] = lognormalReturn(portfolioMean, s.portfolioVolPct / 100, zPortfolio, period)
     if (s.stochasticInflation) {
       // AR(1): shocks persist, so high inflation tends to last several years.
       pi = mean + phi * (pi - mean) + infSd * Math.sqrt(1 - phi * phi) * normal(rng)
-      inflation[t] = pi
+      inflation[t] = Math.pow(1 + pi, period) - 1
     } else {
-      inflation[t] = mean
+      inflation[t] = Math.pow(1 + mean, period) - 1
     }
   }
   return { nominalReturn, inflation, assets: { equity, bond, cash }, stocks: stockPaths(c, equity, equityMean, equityVol, rng) }
@@ -95,9 +98,10 @@ function stockPaths(c: CompiledPlan, equity: Float64Array, equityMean: number, e
       const mean = arithmeticFromCompounded(h.growth + h.dividendYield, h.volatility)
       for (let t = 0; t < c.years; t++) {
         // Recover the equity shock from its return so stocks share it.
-        const zMarket = equityShock(equity[t], equityMean, equityVol)
+        const period = t === 0 ? c.firstPeriodFraction : 1
+        const zMarket = equityShock(equity[t], equityMean, equityVol, period)
         const z = STOCK_MARKET_CORRELATION * zMarket + Math.sqrt(1 - STOCK_MARKET_CORRELATION ** 2) * normal(rng)
-        series[t] = lognormalReturn(mean, h.volatility, z)
+        series[t] = lognormalReturn(mean, h.volatility, z, period)
       }
       out[h.index] = series
     }
@@ -106,8 +110,8 @@ function stockPaths(c: CompiledPlan, equity: Float64Array, equityMean: number, e
 }
 
 // Inverse of lognormalReturn: the standard-normal shock behind an equity return.
-function equityShock(r: number, mean: number, sd: number): number {
+function equityShock(r: number, mean: number, sd: number, period: number): number {
   const sigma2 = Math.log(1 + (sd * sd) / ((1 + mean) * (1 + mean)))
   const mu = Math.log(1 + mean) - sigma2 / 2
-  return sigma2 > 0 ? (Math.log(1 + r) - mu) / Math.sqrt(sigma2) : 0
+  return sigma2 > 0 ? (Math.log(1 + r) - mu * period) / Math.sqrt(sigma2 * period) : 0
 }

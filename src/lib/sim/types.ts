@@ -43,6 +43,8 @@ export interface CompiledPerson {
   // Unused contribution room at plan start, plan-start dollars (undefined = not tracked).
   rrspRoom?: number
   tfsaRoom?: number
+  // Plan-start dollars a year, while earning.
+  pensionAdjustment: number
   // This year's FHSA participation room (undefined = the annual limit) and
   // what is left of the lifetime limit, across all of the person's FHSAs.
   fhsaRoom?: number
@@ -94,10 +96,15 @@ export interface CompiledAccount {
   yields: { interest: number; eligibleDividends: number; foreignDividends: number }
   // CASH: the whole return is taxable interest.
   interestOnly: boolean
+  // Where a contribution over the owner's room goes instead (-1 = nowhere needed).
+  excessAccount: number
   // RRSP: age at which this account becomes a RRIF (undefined = the plan's).
   rrifConversionAge?: number
   // FHSA: no contributions before this calendar year.
   openedYear?: number
+  // FHSA: the account's end. It must close by December 31 of `closureYear`; what
+  // is left goes to the owner's RRSP, `rolloverAccount`.
+  fhsa?: { closureYear: number; homePurchaseYear?: number; rolloverAccount: number }
   // LIRA/LIF: the pension rules that set withdrawal limits.
   lockedInJurisdiction?: ProvinceCode | 'FED'
   // Position in the custom withdrawal order (lower is drawn first).
@@ -115,6 +122,7 @@ export interface CompiledIncome {
   flow: CompiledFlow
   // One-time receipts (windfalls) are deposited into this account index.
   depositAccount: number
+  oneTime: boolean
   // DB pensions: share that continues to a surviving spouse.
   survivorFraction: number
   // RSU bonuses are paid in shares. Holding -1: the owner has no stock holding,
@@ -159,10 +167,14 @@ export interface CompiledProperty {
   proceedsAccount: number
 }
 
+export type RateCompounding = 'monthly' | 'semiAnnual'
+
 export interface CompiledDebt {
   balance: number
   annualRate: number // fraction
   monthlyPayment: number
+  // How the quoted rate compounds. Payments are always monthly.
+  rateCompounding: RateCompounding
   propertyIndex: number // -1 = unsecured
 }
 
@@ -174,6 +186,11 @@ export interface CompiledPlan {
   rules: RuleSet
   startYear: number
   years: number // rows simulated: offsets 0..years-1
+  // Share of the first calendar year left after the balances' date; 1 from Jan 1.
+  firstPeriodFraction: number
+  // The row for headline retirement figures: the first retirement year, or the
+  // first full year for a plan already retired partway through this one.
+  headlineOffset: number
   // First year the household draws from its portfolio (the last person retires).
   drawdownStartOffset: number
   people: CompiledPerson[]
@@ -183,6 +200,7 @@ export interface CompiledPlan {
   expenses: CompiledExpense[]
   expenseMode: 'simple' | 'detailed'
   replacementRate: number // fraction
+  survivorSpending: number // fraction of spending items after the first death
   surplusPolicy: 'ignore' | 'save'
   phases: CompiledPhase[]
   properties: CompiledProperty[]
@@ -192,6 +210,7 @@ export interface CompiledPlan {
   // Account that receives forced RRIF/LIF minimums and meltdown cash after tax.
   reinvestAccount: number
   expectedRealReturn: number // fraction, for VPW
+  feePct: number
   assetReturnsPct: { equity: number; bond: number; cash: number }
   strategy: 'initialPct' | 'expenses'
   spendingStrategy: SpendingStrategy
@@ -232,7 +251,7 @@ export interface PersonYear {
   // Taxable distributions from non-registered and cash accounts.
   investmentIncome: number
   realizedGains: number
-  // End-of-year unused room (nominal), NaN when not tracked.
+  // End-of-year unused room (nominal), NaN when the person doesn't track it.
   rrspRoom: number
   tfsaRoom: number
   alive: boolean
@@ -246,6 +265,8 @@ export interface PersonYear {
 export interface YearRow {
   offset: number
   year: number
+  // Share of the calendar year this row covers; below 1 only in the first year.
+  periodFraction: number
   cpi: number
   // Price index at the end of the year, for valuing end-of-year balances.
   cpiEnd: number
@@ -253,8 +274,20 @@ export interface YearRow {
   people: PersonYear[]
   balancesStart: number[]
   balancesEnd: number[]
+  // Saving actually made this year, including reinvested RRSP refunds.
   contributions: number
+  // What the plan's schedules asked to save (before any refund top-up), and the
+  // part cash could not pay for. Missing it is reported but is not a shortfall.
+  scheduledContributions: number
+  missedContributions: number
+  // Contributions over RRSP or tracked TFSA room, invested as non-registered instead.
+  excessContributions: number
+  // Investment return added to the accounts this year (negative in a bad year).
+  growth: number
   oneTimeExpenses: number
+  // One-time costs other than gifts paid from savings: debt left after a
+  // property sale and the part of a replacement home the sale didn't cover.
+  saleCostsPaid: number
   withdrawal: number
   // Recorded withdrawals per account (same order as CompiledPlan.accounts);
   // they add up to `withdrawal`.
@@ -279,6 +312,8 @@ export interface YearRow {
   rrspRefunds: number
   investmentIncome: number
   realizedGains: number
+  // An FHSA balance taken out tax-free to buy a first home; it leaves the plan.
+  homePurchaseWithdrawals: number
   // One-time income and property sale proceeds deposited into accounts.
   deposits: number
   // What a property sale this year adds towards the retirement goal: the cash
@@ -300,6 +335,8 @@ export interface YearRow {
   reinvested: number
   // Surplus invested under the 'save' policy.
   saved: number
+  // RRSP refunds that overflowed the TFSA into the non-registered account.
+  refundsReinvested: number
   // Stock portfolio accounts.
   stockValue: number // end of year
   unvestedValue: number // unvested RSUs at this year's price (not in net worth)

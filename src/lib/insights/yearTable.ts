@@ -13,7 +13,7 @@ export function buildYearTable(c: CompiledPlan, result: SimResult, showRealValue
     const end = showRealValues ? 1 / row.cpiEnd : 1
     const sum = (pick: (p: SimResult['rows'][number]['people'][number]) => number) => row.people.reduce((t, p) => t + pick(p), 0) * s
     return [
-      row.year,
+      row.periodFraction < 1 ? `${row.year} (rest of year)` : row.year,
       row.people.map((p, i) => (p.alive ? `${c.people[i].name} ${p.age}` : null)).filter(Boolean).join(' / '),
       row.phase === 'drawdown' ? 'Retired' : 'Working',
       sum(p => p.employment),

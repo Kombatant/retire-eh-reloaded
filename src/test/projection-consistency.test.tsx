@@ -71,6 +71,7 @@ function goalFor(
   annualPension: number,
   effectiveTaxRate: number,
   guaranteedIncomeSchedule: number[] = [],
+  priceIndexAtRetirement?: number,
 ) {
   return calculateRetirementGoal({
     currentProjectionData: data,
@@ -81,10 +82,9 @@ function goalFor(
     yearsToRetirement,
     expectedReturn: 7,
     inflationRate: 2.5,
-    currentAnnualContributions: 0,
-    currentPortfolio: 187000,
     showRealValues,
     plannedGifts: gifts,
+    priceIndexAtRetirement,
     effectiveTaxRate,
   })
 }
@@ -118,6 +118,7 @@ describe('projection: real vs nominal consistency', () => {
       nominalProjection.totalAnnualPension + nominalProjection.totalAnnualCpp + nominalProjection.totalAnnualOas,
       nominalProjection.retirementTax?.effectiveRrspTaxRate ?? 0,
       nominalProjection.guaranteedIncomeSchedule,
+      nominalProjection.simulation.rows[nominalProjection.yearsToRetirement].cpi,
     )
 
     const realEnd = realProjection.currentProjectionData.at(-1)!.Total!
@@ -199,8 +200,6 @@ describe('goal: delayed CPP and OAS', () => {
       yearsToRetirement: 5,
       expectedReturn: 7,
       inflationRate: 2.5,
-      currentAnnualContributions: 0,
-      currentPortfolio: 0,
       showRealValues: true,
     }
 

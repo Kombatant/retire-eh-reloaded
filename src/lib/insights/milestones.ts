@@ -1,5 +1,6 @@
 import type { PlanV2 } from '@/lib/plan/schema'
 import type { CompiledPlan, SimResult } from '@/lib/sim/types'
+import { evaluateFunding } from '@/lib/sim/funding'
 import type { FiMetrics } from './fi'
 
 export interface Milestone {
@@ -41,7 +42,11 @@ export function buildMilestones(plan: PlanV2, c: CompiledPlan, result: SimResult
 
   if (fi?.fiYear) out.push({ year: fi.fiYear, label: 'Financially independent', kind: 'fi' })
   if (fi?.coastYear) out.push({ year: fi.coastYear, label: 'Coast FI: could stop saving', kind: 'fi' })
-  if (result.depletionOffset !== null) out.push({ year: c.startYear + result.depletionOffset, label: 'Portfolio runs out', kind: 'risk' })
+  const funding = evaluateFunding(c, result)
+  if (funding.depletion) out.push({ year: funding.depletion.year, label: 'Portfolio runs out', kind: 'risk' })
+  if (funding.firstShortfall && funding.firstShortfall.year !== funding.depletion?.year) {
+    out.push({ year: funding.firstShortfall.year, label: 'Plan falls short', kind: 'risk' })
+  }
 
   return out
     .filter(m => m.year >= c.startYear && m.year < c.startYear + c.years + 1)

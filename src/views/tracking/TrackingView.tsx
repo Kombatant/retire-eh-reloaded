@@ -7,6 +7,8 @@ import { useProjectionContext } from '@/contexts/ProjectionContext'
 import { patchAccount } from '@/lib/plan/edits'
 import { isoDate } from '@/lib/plan/defaults'
 import { newId } from '@/lib/plan/ids'
+import type { PlanV2 } from '@/lib/plan/schema'
+import { baselineChartPoints, baselineFromPlan, baselineValueAt, fractionalYear } from '@/lib/insights/tracking'
 import { ACCOUNT_LABELS } from '@/lib/plan/accountGroups'
 import { money, moneyCompact } from '@/lib/formatting'
 import { axisProps, chartColors, gridProps, tooltipProps } from '@/lib/ui/chartTheme'
@@ -25,44 +27,29 @@ import { Stat } from '@/components/ui/Stat'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { ChartLegend } from '@/components/ui/ChartLegend'
 
-function fractionalYear(date: string): number {
-  const [y, m, d] = date.split('-').map(Number)
-  return y + ((m - 1) * 30.4 + (d - 1)) / 365
-}
-
 // Record actual balances over time and compare them with a saved projection.
 export function TrackingView() {
-  const { activePlan, snapshots, baselines, deleteSnapshot, setBaseline, now } = usePlanStore()
+  const { activePlan, snapshots, baselines, deleteSnapshot, setBaseline, now, nowYear } = usePlanStore()
   const { simulation } = useProjectionContext()
   const [recording, setRecording] = useState(false)
 
   const planSnapshots = snapshots.filter(s => s.planId === activePlan.id)
   const baseline = baselines.find(b => b.planId === activePlan.id)
 
-  const saveBaseline = () => setBaseline({
-    planId: activePlan.id,
-    date: isoDate(now),
-    // Start-of-year balances, nominal, so they line up with dated snapshots.
-    portfolio: simulation.rows.map(r => ({ year: r.year, value: r.balancesStart.reduce((s, b) => s + b, 0) })),
-  })
+  // Rebaselining restarts the comparison from the plan as it stands now.
+  const saveBaseline = () => setBaseline(baselineFromPlan(activePlan, nowYear, isoDate(now), {
+    date: activePlan.asOf,
+    value: simulation.rows[0]?.balancesStart.reduce((s, b) => s + b, 0) ?? 0,
+  }))
 
   const chartData = useMemo(() => {
-    const projected = (baseline?.portfolio ?? []).slice(0, 25).map(p => ({ x: p.year, projected: p.value }))
+    const projected = baseline ? baselineChartPoints(baseline) : []
     const actual = planSnapshots.map(s => ({ x: fractionalYear(s.date), actual: s.total }))
     return [...projected, ...actual].sort((a, b) => a.x - b.x)
   }, [baseline, planSnapshots])
 
   const latest = planSnapshots.at(-1)
-  const expectedNow = latest && baseline
-    ? (() => {
-        const x = fractionalYear(latest.date)
-        const y0 = Math.floor(x)
-        const a = baseline.portfolio.find(p => p.year === y0)
-        const b = baseline.portfolio.find(p => p.year === y0 + 1)
-        if (!a) return null
-        return b ? a.value + (b.value - a.value) * (x - y0) : a.value
-      })()
-    : null
+  const expectedNow = latest && baseline ? baselineValueAt(baseline, latest.date) : null
   const diff = latest && expectedNow !== null ? latest.total - expectedNow : null
 
   return (
@@ -152,14 +139,14 @@ export function TrackingView() {
       )}
 
       <Sheet open={recording} onClose={() => setRecording(false)} title="Record balances" description="What each account is worth on the date below.">
-        {recording && <RecordForm onDone={() => setRecording(false)} hasBaseline={!!baseline} saveBaseline={saveBaseline} />}
+        {recording && <RecordForm onDone={() => setRecording(false)} hasBaseline={!!baseline} />}
       </Sheet>
     </>
   )
 }
 
-function RecordForm({ onDone, hasBaseline, saveBaseline }: { onDone: () => void; hasBaseline: boolean; saveBaseline: () => void }) {
-  const { activePlan, updateActivePlan, addSnapshot, now } = usePlanStore()
+function RecordForm({ onDone, hasBaseline }: { onDone: () => void; hasBaseline: boolean }) {
+  const { activePlan, updateActivePlan, addSnapshot, setBaseline, now, nowYear } = usePlanStore()
   const [date, setDate] = useState(() => isoDate(now))
   const [draft, setDraft] = useState<Record<string, number>>(() => Object.fromEntries(activePlan.accounts.map(a => [a.id, a.balance])))
   const [updatePlan, setUpdatePlan] = useState(true)
@@ -173,19 +160,21 @@ function RecordForm({ onDone, hasBaseline, saveBaseline }: { onDone: () => void;
   const save = () => {
     const balances = Object.fromEntries(activePlan.accounts.map(a => [a.id, draft[a.id] ?? a.balance]))
     const total = Object.values(balances).reduce((s, v) => s + v, 0)
-    if (!hasBaseline) saveBaseline()
-    addSnapshot({ id: newId('snapshot'), planId: activePlan.id, date, balances, total })
-    if (updatePlan && canUpdatePlan) {
-      updateActivePlan(p => {
-        let next = { ...p, asOf: date }
-        // A stock account's value comes from its shares and price, so a typed
-        // balance is an observation only.
-        for (const account of p.accounts) {
-          if (account.type !== 'STOCK') next = patchAccount(next, account.id, { balance: balances[account.id] })
-        }
-        return next
-      })
+    const applyBalances = (p: PlanV2) => {
+      let next = { ...p, asOf: date }
+      // A stock account's value comes from its shares and price, so a typed
+      // balance is an observation only.
+      for (const account of p.accounts) {
+        if (account.type !== 'STOCK') next = patchAccount(next, account.id, { balance: balances[account.id] })
+      }
+      return next
     }
+    const updating = updatePlan && canUpdatePlan
+    // The first baseline is built from these balances, so it opens exactly at
+    // the snapshot, with no difference to report.
+    if (!hasBaseline) setBaseline(baselineFromPlan(updating ? applyBalances(activePlan) : activePlan, nowYear, date, { date, value: total }))
+    addSnapshot({ id: newId('snapshot'), planId: activePlan.id, date, balances, total })
+    if (updating) updateActivePlan(applyBalances)
     onDone()
   }
 

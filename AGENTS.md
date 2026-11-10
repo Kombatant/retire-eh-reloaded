@@ -26,13 +26,19 @@ The application is 100% pure TypeScript (React + Vite). All calculations run cli
   - `simulate(compiled, marketPath)` runs a year-by-year household simulation in nominal dollars.
   - One-time costs paid from savings (gifts, debt left after a sale, a replacement home) go through `fundOneOff`, so they are withdrawn, taxed and reported like any other withdrawal.
   - A property sold from retirement onwards isn't in savings at retirement, so `YearRow.propertySaleCredit` carries it into the goal, discounted at the withdrawal rate (`valueAtRetirement`). The verdict still needs the simulation to stay funded.
-  - `YearRow.shortfall` decides whether a year counts as funded: unfunded budget for `expenses`/`initialPct`, unfunded essentials for strategies that flex spending, and the missed withdrawal in simple mode. `budgetShortfall`, `essentialShortfall` and `withdrawalShortfall` report each part.
+  - `YearRow.shortfall` decides whether a year counts as funded: unfunded budget for `expenses`/`initialPct`, unfunded essentials for strategies that flex spending. In simple mode: the income target minus simulated income for fixed rates and `expenses`, the missed withdrawal for flexible strategies. `budgetShortfall`, `essentialShortfall` and `withdrawalShortfall` report each part.
+  - `evaluateFunding` (`funding.ts`) is the one verdict: every page reads it, with a $1 real tolerance. It reports the first shortfall, cause and depletion separately. The savings goal is a labelled guideline and never decides on-track. Bump `MODEL_VERSION` there when results change.
+  - Money can't appear or vanish: `src/test/invariants.test.ts` checks every row reconciles. Detailed mode saves only from cash left after tax and spending (the share is solved, because the deduction feeds back into tax; `missedContributions` reports the rest), and debt follows what was actually paid. Simple-mode saving comes from outside the model, and it invests receipts net of the year's tax on them.
+  - The first period runs from `plan.asOf` to the next January 1 (`firstPeriodFraction`, `YearRow.periodFraction`). Recurring flows are prorated, one-time events are not, paths own the return (`planPath`, `scaleFirstPeriod`, `lognormalReturn`'s `period`), and tax is T(R+O) − (1−f)·T(R) inside `householdTax`. Headline figures use `c.headlineOffset`. Build deterministic paths with `planPath(c)`.
+  - RRSP room is always ledgered: an untracked person is capped at an estimate from new room. Excess contributions go to `excessAccount` (non-registered, undeducted) and are reported as `excessContributions`.
+  - Year-specific tax rules are data on each province (`indexPauses`, `basicPersonalSteps`, `pensionIndexed`), turned into yearly real values by `src/lib/tax/indexation.ts`.
   - `legacyAdapter.ts` turns the output into the series the existing charts use.
   - Deterministic projections, scenario bands and (later) Monte Carlo and backtests all reuse `simulate`.
 - **Risk** (`src/lib/sim/risk.ts`, `paths/`): Monte Carlo (correlated lognormal asset returns plus AR(1) inflation, seeded), historical backtest over `src/data/historical/canada-annual.json`, and crash overlays. All run on `simulate`.
   - Return inputs are long-run compounded rates. `monteCarloPath` converts them to arithmetic means with `arithmeticFromCompounded`, so a typical run compounds at the rate entered.
   - The Risk tab runs them in a Web Worker (`src/workers/sim.worker.ts`) through `useRiskAnalysis`.
   - Results stream in batches and are cached by plan.
+  - `paths/historical.ts` also replays from the first retirement year (`retirementAnchoredPath`); stress tests add longevity cases; `successRange` is a Wilson interval on the success rate.
   - `failures.ts` keeps a small record per run (`analyzeRun`) and turns it into a `FailureSummary`: when the failing runs first fall short, for how long, by how much, why money was left over if it was, and how their markets differed from the funded runs. Only Risk asks for records (`acc.records`), so Proposals doesn't pay for them. `src/lib/insights/failureExplanation.ts` turns the summary into words and picks the fixes shown on the Risk page from the Proposals job.
   - In tests, where jsdom has no Worker, a small sample runs synchronously instead.
 - **Insights** (`src/lib/insights/`): Sankey data, CSV export, FI and Coast FI, milestones, plan comparison, tax-bracket position, the per-year account breakdown (balances and withdrawals by account category, `accountBreakdown.ts`) and spending levels (savings at yearly amounts around the plan's spending, each a full `simulate` run with withdrawals following spending, `spendingLevels.ts`). Each is a pure, tested helper.
@@ -40,8 +46,8 @@ The application is 100% pure TypeScript (React + Vite). All calculations run cli
   - The page runs `runProposalJob` in its own Web Worker (`src/workers/proposals.worker.ts`) through `useProposals`.
   - Add a new lever by adding a `Change` kind, its `applyChange` and `describeChange` cases, and a candidate list.
   - When a plan misses the goal or the success target, the trade-offs include downsizing or selling the principal residence, from the latest age to the earliest (`homeSaleLevers`). Selling outright adds an estimated rent to the budget, so it is only offered in detailed mode.
-  - The goal comes from `planGoalOutlook` (`src/lib/insights/outlook.ts`), which the Dashboard also uses through `usePlanOutlook`, so both give the same verdict.
-  - Retirement timing (`src/lib/insights/retirementTiming.ts`) scores a range of retirement ages the same way, in its own worker through `useRetirementTiming`. All ages are scored up front so the slider needs no recalculation. "Safe" means the success target and the goal are both met, at that age and the later ones.
+  - The verdict and guideline come from `planGoalOutlook` (`src/lib/insights/outlook.ts`), which the Dashboard also uses through `usePlanOutlook`, so both give the same answer.
+  - Retirement timing (`src/lib/insights/retirementTiming.ts`) scores a range of retirement ages the same way, in its own worker through `useRetirementTiming`. All ages are scored up front so the slider needs no recalculation. "Safe" means the success target and the funding verdict are both met, at that age and every later age tested.
 - **Original engine** (`src/lib/legacy/`): kept only as the reference for `src/test/sim-parity.test.ts`.
 
 ## GitHub Actions
@@ -83,7 +89,7 @@ A grouped sidebar (a drawer on small screens) with hash routes. Each page shows 
 | | Risk | `#/risk/<monte-carlo\|historical\|stress>` | Success KPIs; fan chart, historical backtest, stress tests; how the failing runs fail and what would fix them |
 | | Proposals | `#/proposals` | When it's safest to retire, with a slider to try other ages; changes tested against the current plan: best combination, free changes, trade-offs or room to spare; try as a new plan or apply with undo |
 | Tools | Compare | `#/compare` | 2–3 saved plans side by side |
-| | Tracking | `#/tracking` | Dated balance snapshots, actual vs. projected, rebaseline |
+| | Tracking | `#/tracking` | Dated balance snapshots, actual vs. projected by day, rebaseline |
 | — | Learn | `#/learn/<topic>` | Methodology articles |
 
 Share links also use the hash (`#plan=…`). Route hashes always start with `#/`, so `parseRoute` ignores share hashes (`src/lib/ui/route.ts`).
@@ -120,7 +126,8 @@ Provider order in `App.tsx`: ThemeProvider › ToastProvider › RouteProvider �
 - The plan data model is versioned (`src/lib/plan/schema.ts`, zod, `schemaVersion: 2`). It is the single source of truth for persistence, YAML export and share links.
 - Every external plan source (YAML, share links, stored plans) goes through `parsePlanData` in `src/lib/plan/migrate.ts`. Older v1 files are migrated forward there.
 - Don't tighten `planSchema` for things the engine merely can't honour: a schema failure stops a plan loading or saving. Report them from `diagnosePlan` (`src/lib/plan/diagnostics.ts`) instead.
-- Stored data that can't be read is copied untouched to `retireEh.v2.recovery` before anything overwrites it (`loadStoreWithRecovery`, `preserveRecovery`).
+- Stored data that can't be read is copied untouched to `retireEh.v2.recovery` before anything overwrites it (`loadStoreWithRecovery`, `preserveRecovery`). Snapshots and baselines are parsed entry by entry. Blocked storage gives an explicit unsaved session (`unavailable`).
+- Share links and YAML imports are limited to 128 KiB encoded and 2 MiB decoded, enforced during inflation (`share-link.ts`, `MAX_IMPORT_BYTES`).
 - Results that arrive later (quotes) use `updatePlan(id, …)`, so they reach the plan that asked for them.
 - `PlanStoreProvider` (`src/contexts/PlanStoreContext.tsx`) owns all saved plans, the active plan id, UI preferences (`showRealValues`, `detailLevel`) and person selection, via `useReducer`.
   - It persists everything under one localStorage key, `retireEh.v2`.
@@ -143,7 +150,9 @@ Provider order in `App.tsx`: ThemeProvider › ToastProvider › RouteProvider �
 - `tax-provinces`: hand-computed golden tax values, every jurisdiction, payroll, splitting, OAS/GIS/CPP.
 - `sim-v2`, `sim-accounts`, `sim-spending`, `sim-drawdown`: engine behaviour (tax ownership, refunds, account types, room, income streams, budgets, real estate, RRIF/LIF, strategies, survivors, estate).
 - `sim-risk`, `rng`: Monte Carlo, backtest, crash scenarios, how failing runs fail.
-- `audit-regressions`: scenarios the engine once got wrong (funding verdicts, one-time costs, annual returns, pension eligibility, payroll, LIF jurisdiction, room limits, past events, storage recovery, plan diagnostics).
+- `audit-regressions`: scenarios the engine once got wrong (funding verdicts, cash conservation, tax order, year-specific rules, LIF tables, room, losses, final return, partial first year, tracking, storage recovery, import limits, plan diagnostics).
+- `invariants`: every row reconciles balances and cash, across a scenario matrix.
+- `quote-refresh`: one refresh at a time, queued per plan.
 - `insights`, `outlook`: Sankey, CSV, FI metrics, milestones, comparison, brackets; goal outlook, income sources, money-lasts.
 - `spending-levels`: the yearly amounts compared, that a level matches changing the budget, and the most a plan can spend.
 - `proposals`: applying changes, which proposals are offered, and that a proposal's numbers match applying it.
@@ -157,12 +166,15 @@ Provider order in `App.tsx`: ThemeProvider › ToastProvider › RouteProvider �
 - `src/lib/sim/` - Unified year-by-year simulation engine (`steps/`: debts, solver, RRIF/LIF, spending strategies)
 - `src/lib/sim/risk.ts` - Monte Carlo, historical backtest and stress tests on the unified engine
 - `src/lib/tax/`:
-  - `data/2026.ts`: 2026 tables for federal and all 13 jurisdictions, with sources. Update this file yearly.
+  - `data/2026.ts`: 2026 tables for federal and all 13 jurisdictions. `data/SOURCES.md` lists each table's source and status, and the yearly update checklist.
   - `personal.ts`: income tax for one person.
   - `household.ts`: pension income splitting.
   - `payroll.ts`: CPP/QPP/EI.
   - `quebecLegacy.ts`: the original v1 estimator.
-- `src/lib/benefits/`: CPP/QPP estimate and survivor pension, OAS (residency, deferral, +10% at 75), GIS.
+- `src/lib/benefits/`: CPP/QPP estimate and survivor pension, OAS (residency, deferral, +10% at 75), GIS and the Allowances. GIS reads break points from the published tables and last year's income, which the engine keeps per person.
+- Quebec has its own rules in `household.ts`: one age and retirement amount per couple, reduced on family income and claimable by either spouse (Schedule B), a pension split with its own age test, searched separately from the federal one (Schedule Q), and unused credits moving between two Quebec spouses (line 431). The health services fund (Schedule F) is in `personal.ts`.
+- Couples also share unused age and pension amounts (Schedule 2) and one low-income reduction in NL, PE, NS and NB (`household.ts`).
+- Household tax (`household.ts`) gives the spouse amount to the higher earner and limits a receiver under 65 to pension-plan income for the pension credit. FHSAs end by `fhsa.closureYear` and roll into the RRSP; a `homePurchaseYear` takes the balance out tax-free.
 - `src/lib/market/quotes.ts`: live stock quotes, fetched from the browser.
   - Providers: Twelve Data or Alpha Vantage, with the user's free API key.
   - USD→CAD conversion uses the Bank of Canada Valet API.
@@ -174,5 +186,4 @@ Provider order in `App.tsx`: ThemeProvider › ToastProvider › RouteProvider �
   - `src/lib/insights/stockScenarios.ts` compares the three cases with and without the sell plan.
 - Yearly bonuses are income kinds. `bonus` (cash) is employment income, kept apart from `employment` so it stays out of the primary salary (CPP estimate, replacement target). `rsu` is a typical CAD value per year: that year's projected price for the chosen holding gives the share count, it is taxed as stock compensation, and `row.rsuAwards` reports shares before and after sell to cover. With no holding, the value goes to a non-registered account.
 - `src/lib/formatting.ts` - `money()` / `moneyCompact()` (with `$`) and `formatMoney()` / `formatCompactMoney()` (digits only) for all currency display
-- `src/hooks/useRetirementGoal.ts` - Shared goal calculation hook
 - `src/lib/validation.ts` - Zod schemas for YAML import and form validation

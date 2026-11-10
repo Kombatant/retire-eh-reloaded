@@ -1,5 +1,6 @@
 import { cppAdjustmentFactor } from '@/lib/calculations'
 import { getTaxYear, type TaxYearData } from '@/lib/tax/data/2026'
+import type { ProvinceCode } from '@/lib/plan/schema'
 
 export { cppAdjustmentFactor }
 
@@ -8,6 +9,9 @@ export { cppAdjustmentFactor }
 const YMPE_AVERAGE_FACTOR = 0.927
 // 47 contributory years (18 to 65) less the 17% general drop-out.
 const FULL_BASE_YEARS = 39
+// The QPP drops 15% of the reference period, not 17%, so a full career is 40.
+const QPP_FULL_BASE_YEARS = 40
+const QPP_GENERAL_DROPOUT = 0.15
 // The enhancement accrues over 40 years of contributions after 2019.
 const FULL_ENHANCEMENT_YEARS = 40
 const ENHANCEMENT_START_YEAR = 2019
@@ -21,6 +25,7 @@ export interface CppEarningsProfile {
   contributoryYears: number
   birthYear: number
   retirementAge: number
+  province?: ProvinceCode
 }
 
 // Estimated age-65 CPP/QPP retirement pension in plan-start dollars.
@@ -30,7 +35,7 @@ export interface CppEarningsProfile {
 export function estimateCppAt65(profile: CppEarningsProfile, data: TaxYearData = getTaxYear()): number {
   const ratio = Math.min(1, Math.max(0, profile.averageEarningsRatioPct / 100))
   const averageYmpe = data.payroll.ympe * YMPE_AVERAGE_FACTOR
-  const base = BASE_REPLACEMENT * averageYmpe * ratio * Math.min(1, profile.contributoryYears / FULL_BASE_YEARS)
+  const base = BASE_REPLACEMENT * averageYmpe * ratio * Math.min(1, profile.contributoryYears / (profile.province === 'QC' ? QPP_FULL_BASE_YEARS : FULL_BASE_YEARS))
 
   const workStart = Math.max(ENHANCEMENT_START_YEAR, profile.birthYear + 18)
   const workEnd = profile.birthYear + Math.min(65, profile.retirementAge)
@@ -48,6 +53,7 @@ export interface CppWorkHistory {
   typicalEarnings: number // today's dollars
   yearsNotWorking: number
   childRearingYears: number
+  province?: ProvinceCode
 }
 
 export interface CppEstimate {
@@ -90,7 +96,7 @@ export function estimateCppFromHistory(h: CppWorkHistory, data: TaxYearData = ge
   const workedShare = span > 0 ? workingYears / span : 0
 
   const period = Math.max(1, FULL_PERIOD_YEARS - Math.min(h.childRearingYears, FULL_PERIOD_YEARS - 1))
-  const countedYears = period - Math.round(period * GENERAL_DROPOUT)
+  const countedYears = period - Math.round(period * (h.province === 'QC' ? QPP_GENERAL_DROPOUT : GENERAL_DROPOUT))
   const earnings = Math.max(0, h.typicalEarnings)
   const earningsRatio = Math.min(1, earnings / p.ympe)
   const averageYmpe = p.ympe * YMPE_AVERAGE_FACTOR
@@ -116,18 +122,51 @@ export function estimateCppFromHistory(h: CppWorkHistory, data: TaxYearData = ge
   }
 }
 
-// CPP survivor's pension for a surviving spouse, in the same dollars as the
-// inputs. At 65+, 60% of the deceased's pension, with the combined pension
-// capped at the maximum retirement pension. Under 65 the benefit is lower
-// (37.5% plus a flat-rate portion); we use 37.5% only, which is conservative.
+// The survivor's pension for a surviving spouse, in the same dollars as the
+// inputs. `deceasedPension` is the deceased's pension at 65, because both laws
+// disregard early and late starts here.
+//
+// CPP (Canada Pension Plan s. 58): under 65, a flat rate plus 37.5%; from 65,
+// 60%. With a retirement pension of one's own the percentage part drops by 40%
+// of the lesser of it and that pension (at 65), and the two together are capped.
+//
+// QPP (Act respecting the Québec Pension Plan, ss. 133–137): a flat amount by
+// age plus 37.5% under 65, 60% from 65. With a pension of one's own (`d`, as
+// paid), the base-plan maximum adjusted for the survivor's start age (`c`)
+// limits it: under 65 to flat + c − d (s. 136), from 65 to the lesser of c − d
+// and the greater of 37.5% and 60% − 40% of d (s. 136.1). The survivor is taken
+// to have no dependent children and not to be disabled. One pension figure is
+// used, so the additional plan's separate 50% isn't applied.
 export function cppSurvivorBenefit(params: {
   deceasedPension: number
   survivorOwnPension: number
   survivorAge: number
-  maxRetirementPension: number
-}): number {
-  const { deceasedPension, survivorOwnPension, survivorAge, maxRetirementPension } = params
+  ownPensionPayable: boolean
+  plan: 'cpp' | 'qpp'
+  // QPP only: the survivor's own pension as paid, and the age it started.
+  survivorOwnPensionPaid?: number
+  survivorStartAge?: number
+}, data: TaxYearData = getTaxYear()): number {
+  const { deceasedPension, survivorOwnPension, survivorAge, ownPensionPayable, plan } = params
+  const s = data.cppSurvivor
+  const a = Math.max(0, deceasedPension)
+
+  if (plan === 'qpp') {
+    const flat = survivorAge >= 45 ? s.qppFixed45To64Annual : s.qppFixedUnder45Annual
+    if (!ownPensionPayable) return survivorAge >= 65 ? 0.6 * a : 0.375 * a + flat
+    const d = Math.max(0, params.survivorOwnPensionPaid ?? survivorOwnPension)
+    const c = s.qppMaxBaseAnnual * cppAdjustmentFactor(params.survivorStartAge ?? 65, 72)
+    const amount = survivorAge >= 65
+      ? Math.min(c - d, Math.max(0.375 * a, 0.6 * a - 0.4 * d))
+      : Math.min(0.375 * a + flat, flat + c - d)
+    return Math.max(0, amount)
+  }
+
   const rate = survivorAge >= 65 ? 0.6 : 0.375
-  const benefit = Math.max(0, deceasedPension) * rate
-  return Math.max(0, Math.min(benefit, maxRetirementPension - Math.max(0, survivorOwnPension)))
+  const percentage = a * rate
+  const own = ownPensionPayable ? Math.max(0, survivorOwnPension) : 0
+  const flat = survivorAge >= 65 ? 0 : s.flatRateAnnual
+  if (!ownPensionPayable) return flat + percentage
+  const reduced = percentage - Math.min(0.4 * percentage, 0.4 * own)
+  return flat + Math.max(0, Math.min(reduced, s.combinedMaxAnnual - own))
 }

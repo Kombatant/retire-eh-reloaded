@@ -1,8 +1,9 @@
 import { ACCOUNT_TYPES, GIFT_CATEGORY, type AccountType, type PlanV2 } from '@/lib/plan/schema'
 import { compilePlan } from '@/lib/sim/compile'
 import { simulate } from '@/lib/sim/simulate'
-import { deterministicPath } from '@/lib/sim/paths/deterministic'
+import { planPath } from '@/lib/sim/paths/deterministic'
 import { runMonteCarloBatch, settingsFromPlan, successIsMeaningful } from '@/lib/sim/risk'
+import { TARGET_SUCCESS } from '@/lib/sim/funding'
 import { planMetrics } from './compare'
 import { planGoalOutlook } from './outlook'
 import { money } from '@/lib/formatting'
@@ -11,8 +12,7 @@ import { money } from '@/lib/formatting'
 // the change applied. Nothing here relies on rules of thumb. A change is shown
 // only when the simulation says it beats the current plan.
 
-// The success rate the trade-offs aim for.
-export const TARGET_SUCCESS = 0.9
+export { TARGET_SUCCESS }
 // Every run of a proposal uses the same simulated markets as the baseline, but
 // differences smaller than this are still too small to act on.
 export const MIN_SUCCESS_GAIN = 0.01
@@ -185,7 +185,7 @@ export function describeChange(change: Change): { title: string; detail: string 
     case 'benefitStart':
       return { title: `Start CPP at ${change.cppAge} and OAS at ${change.oasAge}`, detail: 'Applied to everyone in the plan who has not started these benefits yet.' }
     case 'fundSpending':
-      return { title: 'Withdraw what your budget needs', detail: 'Use the “Fund my spending” strategy: each year’s withdrawal is set by your budget and tax instead of a fixed rate.' }
+      return { title: 'Withdraw what your spending needs', detail: 'Use the “Fund my spending” strategy: each year’s withdrawal is set by your budget or income target instead of a fixed rate.' }
     case 'rrifConversion':
       return { title: `Convert your RRSP to a RRIF at ${change.age}`, detail: 'Minimum withdrawals start at that age, and RRIF income qualifies for the pension credit and pension splitting from 65.' }
     case 'retirementShift': {
@@ -282,7 +282,7 @@ function rrifChanges(plan: PlanV2, nowYear: number): Change[] {
 
 // A fixed rate can take less than the budget needs even with money left over.
 function strategyChanges(plan: PlanV2): Change[] {
-  return plan.expenses.mode === 'detailed' && plan.drawdown.strategy.kind === 'initialPct' ? [{ kind: 'fundSpending' }] : []
+  return plan.drawdown.strategy.kind === 'initialPct' ? [{ kind: 'fundSpending' }] : []
 }
 
 function savingTarget(plan: PlanV2) {
@@ -319,7 +319,7 @@ function homeSaleLevers(plan: PlanV2, nowYear: number): Change[][] {
 
 // --- Comparing results --------------------------------------------------------
 
-function isImprovement(base: PlanScore, s: PlanScore): boolean {
+export function isImprovement(base: PlanScore, s: PlanScore): boolean {
   if (base.funded && !s.funded) return false
   if (base.onTrack && !s.onTrack) return false
   const success = (s.successRate ?? 0) - (base.successRate ?? 0)
@@ -329,7 +329,7 @@ function isImprovement(base: PlanScore, s: PlanScore): boolean {
   return success >= MIN_SUCCESS_GAIN
     || (!base.onTrack && s.onTrack)
     || estateGain >= Math.max(MIN_MONEY_GAIN, base.afterTaxEstate * MIN_RELATIVE_GAIN)
-    || incomeGain >= base.averageIncome * MIN_RELATIVE_GAIN
+    || (incomeGain > 0 && incomeGain >= base.averageIncome * MIN_RELATIVE_GAIN)
 }
 
 // Plans short of the target care about success first; plans already past it
@@ -357,7 +357,7 @@ export function createScorer(plan: PlanV2, startYear: number, maxRuns = PROPOSAL
   const runs = Math.min(settings.runs, maxRuns)
   const score = (candidate: PlanV2): PlanScore => {
     const c = compilePlan(candidate, { startYear })
-    const result = simulate(c, deterministicPath(c.years, c.expectedReturnPct, c.inflationPct))
+    const result = simulate(c, planPath(c))
     const metrics = planMetrics(candidate, c, result)
     const { outlook } = planGoalOutlook(candidate, c, result, startYear)
     const successRate = successIsMeaningful(c, result)

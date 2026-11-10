@@ -21,7 +21,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 
 function payoffLabel(debt: Debt, nowYear: number): string {
   if (debt.balance <= 0) return 'Paid off'
-  const months = monthsToRepay(debt.balance, debt.interestRatePct / 100, debt.monthlyPayment)
+  const months = monthsToRepay(debt.balance, debt.interestRatePct / 100, debt.monthlyPayment, debt.rateCompounding)
   if (!Number.isFinite(months)) return 'Payment does not cover the interest'
   return `Paid off in ${nowYear + Math.ceil(months / 12)} (${Math.floor(months / 12)} yr ${months % 12} mo)`
 }
@@ -44,7 +44,7 @@ export function PropertySection() {
   const newDebt = () => {
     const id = newId('debt')
     updateActivePlan(p => addDebt(p, {
-      id, label: 'Mortgage', kind: 'mortgage', balance: 300000, interestRatePct: 4.5, monthlyPayment: 1700, propertyId: p.properties[0]?.id,
+      id, label: 'Mortgage', kind: 'mortgage', balance: 300000, interestRatePct: 4.5, monthlyPayment: 1700, rateCompounding: 'semiAnnual', propertyId: p.properties[0]?.id,
     }))
     setEditing({ kind: 'debt', id })
   }
@@ -188,6 +188,12 @@ function DebtEditor({ debt }: { debt: Debt }) {
       </Field>
       <Field label="Monthly payment">
         <NumberInput value={debt.monthlyPayment} min={0} onChange={(v) => update({ monthlyPayment: v })} />
+      </Field>
+      <Field label="How the rate compounds" info="Canadian fixed-rate mortgages compound twice a year. Variable mortgages, loans and lines of credit usually compound monthly; your agreement says which.">
+        <Select value={debt.rateCompounding ?? 'monthly'} onChange={(e) => update({ rateCompounding: e.target.value as NonNullable<Debt['rateCompounding']> })}>
+          <option value="semiAnnual">Twice a year</option>
+          <option value="monthly">Monthly</option>
+        </Select>
       </Field>
       <Field label="Secured by" info="A mortgage linked to a property is repaid from the sale proceeds if you sell.">
         <Select value={debt.propertyId ?? ''} onChange={(e) => update({ propertyId: e.target.value || undefined })}>

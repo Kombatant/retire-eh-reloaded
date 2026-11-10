@@ -79,7 +79,7 @@ describe('RRIF and LIF rules', () => {
     })
     const lifRow = simulatePlan(lif, flat).result.rows[0]
     expect(lifRow.withdrawal).toBeCloseTo(100000 * lifMaximumFactor(59), 4)
-    expect(lifRow.shortfall).toBeGreaterThan(0)
+    expect(lifRow.withdrawalShortfall).toBeGreaterThan(0)
   })
 })
 
@@ -230,8 +230,8 @@ describe('first death and estate', () => {
     expect(after.people[0].alive).toBe(false)
     expect(after.people[0].pension).toBe(0)
     expect(after.people[1].pension).toBeCloseTo(18000, 6)
-    // CPP survivor's pension: 60% of 15,000, capped at the maximum.
-    expect(after.people[1].cpp).toBeCloseTo(5000 + 9000, 6)
+    // 60% of 15,000, less 40% of the survivor's own 5,000 (CPP Act s. 58(2)).
+    expect(after.people[1].cpp).toBeCloseTo(5000 + 7000, 6)
     // The RRIF is now taxed to the survivor.
     expect(after.people[1].registeredWithdrawals).toBeGreaterThan(0)
     expect(after.people[0].tax).toBe(0)
@@ -244,7 +244,7 @@ describe('first death and estate', () => {
     expect(estate.year).toBe(last.year)
     expect(estate.grossEstate).toBeCloseTo(last.netWorth, 6)
     expect(estate.finalReturnTax).toBeGreaterThan(0)
-    expect(estate.probate).toBeCloseTo(probateFee('ON', estate.grossEstate - estate.finalReturnTax), 6)
+    expect(estate.probate).toBeCloseTo(probateFee('ON', estate.grossEstate), 6)
     expect(estate.afterTaxEstate).toBeCloseTo(estate.grossEstate - estate.finalReturnTax - estate.probate, 6)
   })
 

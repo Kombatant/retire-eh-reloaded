@@ -124,8 +124,9 @@ describe('risk summaries', () => {
   })
 
   it('makes a richer plan at least as likely to succeed', () => {
-    const lean = runMonteCarlo(plan({ drawdown: { strategy: { kind: 'initialPct', ratePct: 7 } } }), YEAR, 60)
-    const rich = runMonteCarlo(plan({ drawdown: { strategy: { kind: 'initialPct', ratePct: 3 } } }), YEAR, 60)
+    const spending = (replacementRate: number) => plan({ expenses: { mode: 'simple', replacementRate }, drawdown: { strategy: { kind: 'expenses' } } })
+    const lean = runMonteCarlo(spending(120), YEAR, 60)
+    const rich = runMonteCarlo(spending(40), YEAR, 60)
     expect(rich.successRate).toBeGreaterThanOrEqual(lean.successRate)
   })
 
@@ -138,7 +139,7 @@ describe('risk summaries', () => {
 
   it('runs every crash scenario', () => {
     const crashes = runCrashScenarios(plan(), YEAR)
-    expect(crashes.map(c => c.id)).toEqual(['gfc', 'dotcom', 'stagflation'])
+    expect(crashes.map(c => c.id)).toEqual(['gfc', 'dotcom', 'stagflation', 'longevity-5', 'longevity-10'])
     const gfc = crashes[0]
     expect(gfc.minReal).toBeLessThan(gfc.baselineEndingReal + 1e9)
   })
@@ -195,6 +196,8 @@ describe('how failing runs fail', () => {
     const rich = plan({
       accounts: [{ id: 't', ownerId: 'a', type: 'TFSA', balance: 20_000_000 }],
       expenses: budget(30000),
+      // A fixed 4% of this much can still run dry, spending far beyond the budget.
+      drawdown: { strategy: { kind: 'expenses' } },
     })
     expect(runMonteCarlo(rich, YEAR, 40).failures).toBeNull()
     expect(runBacktest(rich, YEAR).failures).toBeNull()
@@ -269,7 +272,8 @@ describe('how failing runs fail', () => {
 
   it('describes what the test measures in each mode', () => {
     const subject = (p: PlanV2) => shortfallSubject(compilePlan(p, { startYear: YEAR }))
-    expect(subject(plan())).toBe('planned withdrawals')
+    expect(subject(plan())).toBe('income target')
+    expect(subject(plan({ drawdown: { strategy: { kind: 'vpw' } } }))).toBe('planned withdrawals')
     expect(subject(stretched())).toBe('budget')
     expect(subject(plan({ expenses: budget(50000), drawdown: { strategy: { kind: 'vpw' } } }))).toBe('essential spending')
   })

@@ -21,6 +21,14 @@ export default defineConfig([
     },
   },
   {
+    // The engine has no React in it, and this rule's path counting takes
+    // minutes on simulate()'s long year loop.
+    files: ['src/lib/sim/**/*.ts'],
+    rules: {
+      'react-hooks/rules-of-hooks': 'off',
+    },
+  },
+  {
     files: ['src/contexts/**/*.{ts,tsx}'],
     rules: {
       'react-refresh/only-export-components': 'off',

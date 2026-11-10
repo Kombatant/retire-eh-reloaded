@@ -3,7 +3,10 @@ export type CsvValue = string | number | null | undefined
 function cell(value: CsvValue): string {
   if (value === null || value === undefined) return ''
   if (typeof value === 'number') return Number.isFinite(value) ? String(Math.round(value * 100) / 100) : ''
-  return /[",\n\r]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value
+  // A spreadsheet runs a cell that starts like a formula. Text only: numbers
+  // above are real numbers, negatives included.
+  const text = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value
+  return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
 }
 
 // RFC 4180 CSV with a header row.

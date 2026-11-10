@@ -4,6 +4,7 @@ import type { PlanAssumptions } from '@/types/plan'
 import type { PlanV2, UiPrefs } from '@/lib/plan/schema'
 import {
   acknowledgeRecovery,
+  browserStorage,
   loadStoreWithRecovery,
   preserveRecovery,
   readRecoveryEntries,
@@ -122,14 +123,20 @@ function storageErrorMessage(error: unknown): string {
 export function PlanStoreProvider({ children, now: nowProp }: { children: ReactNode; now?: Date }) {
   const [now] = useState(() => nowProp ?? new Date())
   const [boot] = useState(() => {
-    const loaded = loadStoreWithRecovery(localStorage, now)
-    return { state: loaded.state, canOverwrite: loaded.recovery ? preserveRecovery(localStorage, loaded.recovery, now) : true }
+    const loaded = loadStoreWithRecovery(browserStorage(), now)
+    return {
+      state: loaded.state,
+      unavailable: loaded.unavailable,
+      canOverwrite: !loaded.unavailable && (loaded.recovery ? preserveRecovery(browserStorage(), loaded.recovery, now) : true),
+    }
   })
   const [state, dispatch] = useReducer(storeReducer, boot.state)
-  const [storageError, setStorageError] = useState<string | null>(() =>
-    boot.canOverwrite ? null : 'Some saved data could not be read or backed up, so nothing is being saved. Free up browser storage and reload.')
+  const [storageError, setStorageError] = useState<string | null>(() => {
+    if (boot.unavailable) return 'Your browser is blocking storage, so this is an unsaved session. Your changes last until you close this tab; export your plan from the ⋯ menu to keep it.'
+    return boot.canOverwrite ? null : 'Some saved data could not be read or backed up, so nothing is being saved. Free up browser storage and reload.'
+  })
   const [recoveryEntries, setRecoveryEntries] = useState<RecoveryEntry[]>(() =>
-    readRecoveryEntries(localStorage).filter(e => !e.acknowledged))
+    readRecoveryEntries(browserStorage()).filter(e => !e.acknowledged))
   const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null)
   const nowYear = now.getFullYear()
 
@@ -172,7 +179,7 @@ export function PlanStoreProvider({ children, now: nowProp }: { children: ReactN
   }, [state.plans])
   const clearStorageError = useCallback(() => setStorageError(null), [])
   const acknowledgeRecoveryEntries = useCallback(() => {
-    acknowledgeRecovery(localStorage)
+    acknowledgeRecovery(browserStorage())
     setRecoveryEntries([])
   }, [])
   const addSnapshot = useCallback((snapshot: Snapshot) => dispatch({ type: 'ADD_SNAPSHOT', snapshot }), [])

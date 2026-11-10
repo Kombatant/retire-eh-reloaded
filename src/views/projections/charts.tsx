@@ -2,11 +2,10 @@ import { useMemo } from 'react'
 import {
   Area, CartesianGrid, ComposedChart, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts'
-import type { ProjectionDataPoint } from '@/types/household'
-import type { PlannedGiftLite } from '@/lib/calculations'
-import type { CompiledPlan } from '@/lib/sim/types'
+import type { CompiledPlan, YearRow } from '@/lib/sim/types'
 import { buildContributionGrowth } from '@/lib/contributionGrowth'
 import { buildSpendingLevels, type SpendingLevel } from '@/lib/insights/spendingLevels'
+import { buildWithdrawalRateSeries, WITHDRAWAL_RATES } from '@/lib/insights/withdrawalRates'
 import { money, moneyCompact } from '@/lib/formatting'
 import { axisProps, chartColors, gridProps, sequentialColors, tooltipProps } from '@/lib/ui/chartTheme'
 import { ChartLegend } from '@/components/ui/ChartLegend'
@@ -15,16 +14,12 @@ const yAxis = { ...axisProps, width: 60, tickFormatter: (v: number) => moneyComp
 const ageLabel = (age: unknown) => `Age ${age}`
 const moneyFormatter = (value: unknown, name: unknown) => [money(Number(value ?? 0)), String(name ?? '')] as [string, string]
 
-export function ContributionChart({ data, annualContribution, showRealValues, inflationRate }: {
-  data: ProjectionDataPoint[]
-  annualContribution: number
+export function ContributionChart({ rows, firstAge, showRealValues }: {
+  rows: YearRow[]
+  firstAge: number
   showRealValues: boolean
-  inflationRate: number
 }) {
-  const points = useMemo(
-    () => buildContributionGrowth({ projectionData: data, annualContribution, showRealValues, inflationRate }),
-    [data, annualContribution, showRealValues, inflationRate],
-  )
+  const points = useMemo(() => buildContributionGrowth(rows, firstAge, showRealValues), [rows, firstAge, showRealValues])
   if (points.length === 0) return null
 
   return (
@@ -115,63 +110,23 @@ export function SpendingLevelsChart({ compiledPlan, expectedReturn, showRealValu
   )
 }
 
-const RATES = [4, 4.5, 5, 5.5, 6]
+const RATES = WITHDRAWAL_RATES
 
-// What constant withdrawal rates do to savings over retirement.
-export function DrawdownRatesChart({
-  startBalance, expectedReturn, inflationRate, startAge, endAge = 95, showRealValues, plannedGifts, minCurrentAge,
-}: {
-  startBalance: number
+// What constant withdrawal rates do to savings over retirement, each a full
+// simulation with tax, benefits and account limits.
+export function DrawdownRatesChart({ compiledPlan, expectedReturn, showRealValues }: {
+  compiledPlan: CompiledPlan
   expectedReturn: number
-  inflationRate: number
-  startAge: number
-  endAge?: number
   showRealValues: boolean
-  plannedGifts: PlannedGiftLite[]
-  minCurrentAge: number
 }) {
-  const realReturn = (1 + expectedReturn / 100) / (1 + inflationRate / 100) - 1
-  // Simulate in the same dollars the chart shows.
-  const annualGrowth = showRealValues ? realReturn : expectedReturn / 100
-  const years = endAge - startAge
-
-  const giftAtAge = useMemo(() => {
-    const map: Record<number, number> = {}
-    for (const g of plannedGifts) {
-      const amount = showRealValues ? g.amount : g.amount * Math.pow(1 + inflationRate / 100, Math.max(0, g.age - minCurrentAge))
-      map[g.age] = (map[g.age] ?? 0) + amount
-    }
-    return map
-  }, [plannedGifts, showRealValues, inflationRate, minCurrentAge])
-
-  // The constant rate that spends savings to about $0 by endAge.
-  const depletionRate = annualGrowth > 0 ? (annualGrowth / (1 - Math.pow(1 + annualGrowth, -years))) * 100 : 0
-
-  const data = useMemo(() => {
-    if (startBalance <= 0) return []
-    const pathFor = (rate: number) => {
-      const pts: number[] = []
-      let b = startBalance
-      for (let age = startAge; age <= endAge; age++) {
-        b -= giftAtAge[age] ?? 0
-        pts.push(Math.max(0, b))
-        b = b * (1 + annualGrowth) - startBalance * (rate / 100)
-      }
-      return pts
-    }
-    const paths = RATES.map(pathFor)
-    const deplete = depletionRate > 0 ? pathFor(depletionRate) : null
-    return paths[0].map((_, i) => {
-      const row: Record<string, number> = { age: startAge + i }
-      RATES.forEach((r, idx) => { row[`${r}%`] = paths[idx][i] })
-      if (deplete) row.deplete = deplete[i]
-      return row
-    })
-  }, [startBalance, annualGrowth, startAge, endAge, depletionRate, giftAtAge])
+  const { data, depletionRate, endAge } = useMemo(
+    () => buildWithdrawalRateSeries(compiledPlan, expectedReturn, showRealValues),
+    [compiledPlan, expectedReturn, showRealValues],
+  )
 
   if (data.length === 0) return <p className="text-sm text-fg-muted">Add savings to see how withdrawals draw them down.</p>
 
-  const depleteLabel = `Spend to $0 by ${endAge} (${depletionRate.toFixed(1)}%)`
+  const depleteLabel = depletionRate > 0 ? `Spend to $0 by ${endAge} (${depletionRate.toFixed(1)}%)` : ''
 
   return (
     <>
@@ -200,8 +155,8 @@ export function DrawdownRatesChart({
         </ResponsiveContainer>
       </div>
       <p className="mt-3 text-xs text-fg-muted">
-        Each line withdraws a fixed % of the starting balance every year, with a steady {(annualGrowth * 100).toFixed(1)}% return
-        ({showRealValues ? 'after inflation' : 'before inflation'}). Lines that stay up mean money left over; the dashed line uses everything by {endAge}.
+        Each line is a full simulation that withdraws a fixed % of savings in the first retirement year, then keeps pace with inflation, at a steady {expectedReturn}% return before inflation.
+        Tax, benefits, required minimums and one-time costs all count. Lines that stay up mean money left over; the dashed line uses everything by {endAge}.
       </p>
     </>
   )

@@ -1,8 +1,10 @@
-import { deflateSync, inflateSync, strFromU8, strToU8 } from 'fflate'
-import { exportToYAML, importFromYAML, type ImportedPlan } from './yaml-utils'
+import { deflateSync, Inflate, strFromU8, strToU8 } from 'fflate'
+import { exportToYAML, importFromYAML, MAX_IMPORT_BYTES, type ImportedPlan } from './yaml-utils'
 import type { PlanV2 } from '@/lib/plan/schema'
 
 const SHARE_PARAM = 'plan'
+const MAX_ENCODED_LINK = 128 * 1024
+const INFLATE_SLICE = 1024
 
 function bytesToBase64Url(bytes: Uint8Array): string {
   let binary = ''
@@ -32,10 +34,33 @@ export function encodePlan(plan: PlanV2): string {
   return bytesToBase64Url(deflateSync(strToU8(yaml), { level: 9 }))
 }
 
+// A link's size is checked before and during decompression: a few kilobytes
+// can inflate to gigabytes. Input goes in small slices so the limit bites early.
+function inflateWithinLimit(bytes: Uint8Array): Uint8Array {
+  const chunks: Uint8Array[] = []
+  let size = 0
+  const inflater = new Inflate((chunk) => {
+    size += chunk.length
+    if (size > MAX_IMPORT_BYTES) throw new Error('Decompressed plan is too large.')
+    chunks.push(chunk)
+  })
+  for (let i = 0; i < bytes.length; i += INFLATE_SLICE) {
+    inflater.push(bytes.subarray(i, i + INFLATE_SLICE), i + INFLATE_SLICE >= bytes.length)
+  }
+  const out = new Uint8Array(size)
+  let at = 0
+  for (const chunk of chunks) {
+    out.set(chunk, at)
+    at += chunk.length
+  }
+  return out
+}
+
 // Links created before v2 carry v1 YAML; importFromYAML migrates them.
 export function decodePlan(encoded: string): ImportedPlan | null {
   try {
-    const yaml = strFromU8(inflateSync(base64UrlToBytes(encoded)))
+    if (encoded.length > MAX_ENCODED_LINK) return null
+    const yaml = strFromU8(inflateWithinLimit(base64UrlToBytes(encoded)))
     return importFromYAML(yaml)
   } catch {
     return null

@@ -3,8 +3,9 @@ import type { ProvinceCode } from '@/lib/plan/schema'
 // Approximate probate fees / estate administration tax on the value of an
 // estate passing through the will, by province (2026). Registered accounts
 // and TFSAs with named beneficiaries and joint assets usually avoid probate;
-// this estimate applies the fee to the whole estate, which is conservative.
-// Review annually.
+// this estimate applies the fee to the whole estate before income tax, which
+// is conservative: real probate depends on what actually passes through the
+// will. It is an estimate, and is labelled as one. Review annually.
 export function probateFee(province: ProvinceCode, estate: number): number {
   const v = Math.max(0, estate)
   switch (province) {

@@ -25,12 +25,12 @@ function RailBody() {
           {o.outlook.onTrack
             ? <CheckCircle2 className="h-5 w-5" aria-hidden />
             : <AlertTriangle className="h-5 w-5" aria-hidden />}
-          {o.outlook.onTrack ? 'On track' : 'Short of your goal'}
+          {o.outlook.needsTarget ? 'Set an income target' : o.outlook.onTrack ? 'On track' : 'Runs short'}
         </div>
         <div className="mt-3">
           <GoalProgress outlook={o.outlook} barClassName="h-1.5" onTestRoom={() => navigate({ view: 'proposals' })} />
         </div>
-        {!o.outlook.onTrack && o.outlook.extraSavingsNeeded > 0 && (
+        {!o.outlook.onTrack && !o.outlook.needsTarget && o.outlook.extraSavingsNeeded > 0 && (
           <p className="mt-2 text-xs text-fg-secondary">
             Saving about <span className="font-medium text-fg">{money(o.outlook.extraSavingsNeeded)}</span> more per year would close the gap.
           </p>
@@ -42,12 +42,12 @@ function RailBody() {
         <RailFigure
           label="Retirement income after tax"
           value={`${money(o.outlook.afterTaxIncome)}/yr`}
-          sub={`${money(o.outlook.afterTaxIncome / 12)}/month`}
+          sub={`${money(o.outlook.afterTaxIncome / 12)}/month, levelized`}
         />
         <RailFigure
           label="Money lasts"
           value={o.lasts.wholePlan ? `Past age ${o.lasts.age}` : `Until age ${o.lasts.age}`}
-          sub={o.lasts.wholePlan ? 'Savings last the whole plan' : `Savings run out in ${o.lasts.year}`}
+          sub={o.lasts.note}
           tone={o.lasts.wholePlan ? undefined : 'danger'}
         />
       </dl>
@@ -98,7 +98,7 @@ export function MobileSummaryBar() {
           ? <CheckCircle2 className="h-4 w-4 shrink-0 text-success" aria-hidden />
           : <AlertTriangle className="h-4 w-4 shrink-0 text-warning" aria-hidden />}
         <span className="min-w-0 flex-1 truncate text-sm">
-          <span className="font-medium text-fg">{o.outlook.noSavingsNeeded ? 'Goal met' : `${Math.round(o.outlook.progressPct)}% of goal`}</span>
+          <span className="font-medium text-fg">{o.outlook.needsTarget ? 'Set an income target' : o.outlook.onTrack ? 'On track' : 'Runs short'}</span>
           <span className="text-fg-muted"> · {money(o.outlook.afterTaxIncome)}/yr after tax</span>
         </span>
         <ChevronUp className={cn('h-4 w-4 shrink-0 text-fg-muted transition-transform', open ? 'rotate-0' : 'rotate-180')} aria-hidden />

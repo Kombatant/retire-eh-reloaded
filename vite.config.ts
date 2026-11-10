@@ -25,6 +25,19 @@ export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(getGitSha()),
   },
+  build: {
+    rolldownOptions: {
+      output: {
+        // Libraries change far less often than the app, so they cache across releases.
+        codeSplitting: {
+          groups: [
+            { name: 'charts', test: /node_modules[\\/].*(recharts|d3-|victory-vendor)/ },
+            { name: 'vendor', test: /node_modules/ },
+          ],
+        },
+      },
+    },
+  },
   test: {
     environment: 'jsdom',
     globals: true,

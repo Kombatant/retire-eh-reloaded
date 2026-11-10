@@ -28,6 +28,9 @@ export interface PlanNarrativeInput {
   afterTaxAnnualIncome: number
   guaranteedAnnualIncome: number
   portfolioWithdrawal: number
+  // The verdict: from the simulation, the same one every page shows.
+  onTrack: boolean
+  needsTarget?: boolean
   progress: number
   gap: number
   additionalAnnualSavings: number
@@ -80,6 +83,8 @@ export function buildPlanNarrative(input: PlanNarrativeInput): PlanNarrative {
     afterTaxAnnualIncome,
     guaranteedAnnualIncome,
     portfolioWithdrawal,
+    onTrack,
+    needsTarget = false,
     progress,
     gap,
     additionalAnnualSavings,
@@ -113,7 +118,18 @@ export function buildPlanNarrative(input: PlanNarrativeInput): PlanNarrative {
     }
   }
 
-  const isOnTrack = gap <= 0
+  if (needsTarget) {
+    const subject = people.length === 1 ? "You're" : `${joinNames(people)} are`
+    return {
+      status: 'no-income',
+      headline: 'Set an income target',
+      paragraphs: [
+        `${subject} starting with ${money(totalPortfolio)} invested ${retirementClause}. There is no salary to take a percentage of, so enter an income target under Plan › Spending to test this plan against.`,
+      ],
+    }
+  }
+
+  const isOnTrack = onTrack
   const isClose = !isOnTrack && progress >= 90
   const status: PlanNarrativeStatus = isOnTrack ? 'on-track' : isClose ? 'close' : 'off-track'
 
@@ -129,13 +145,13 @@ export function buildPlanNarrative(input: PlanNarrativeInput): PlanNarrative {
   const growthClause = `The projection assumes ${expectedReturn}% annual growth and ${inflationRate}% inflation, and all figures are ${basis}.`
 
   const comparison = gap <= 0
-    ? `That's about ${money(Math.abs(gap))} above your ${money(requiredPortfolio)} target.`
-    : `That's about ${money(gap)} short of your ${money(requiredPortfolio)} target.`
+    ? `That's about ${money(Math.abs(gap))} above the ${money(requiredPortfolio)} guideline for your savings.`
+    : `That's about ${money(gap)} short of the ${money(requiredPortfolio)} guideline for your savings.`
   const saleSentence = propertySaleValue > 0
     ? ` A planned property sale after retirement adds the equivalent of about ${money(propertySaleValue)}.`
     : ''
   const giftSentence = giftTotal > 0
-    ? ` Your target includes a ${money(giftTotal)} reserve for planned gifts.`
+    ? ` The guideline includes a ${money(giftTotal)} reserve for one-time costs and debts.`
     : ''
 
   const goalClause = spendingMode === 'detailed'
@@ -148,11 +164,13 @@ export function buildPlanNarrative(input: PlanNarrativeInput): PlanNarrative {
   const taxSentence = taxTotal > 0
     ? ` Estimated 2026 federal and ${taxJurisdiction} tax is about ${money(taxTotal)}${oasClawback > 0 ? `, including ${money(oasClawback)} of OAS clawback` : ''}.`
     : ''
-  const leverSentence = gap <= 0
-    ? ` That leaves about ${money(Math.abs(gap))} of cushion.`
-    : yearsToRetirement > 0
-      ? ` Saving about ${money(additionalAnnualSavings)} more a year would close the gap.`
-      : ' Retiring later or trimming the target would close the gap.'
+  const leverSentence = isOnTrack
+    ? gap <= 0 ? ` That leaves about ${money(Math.abs(gap))} of cushion.` : ' The year-by-year simulation funds every year, even though savings are below the guideline.'
+    : gap <= 0
+      ? ' The savings reach the guideline, but the year-by-year simulation still runs short; see Risk for why.'
+      : yearsToRetirement > 0
+        ? ` Saving about ${money(additionalAnnualSavings)} more a year (today's dollars, indicative) would close the gap.`
+        : ' Retiring later or trimming the target would close the gap.'
 
   const headline = isOnTrack
     ? "You're on track"
@@ -166,7 +184,7 @@ export function buildPlanNarrative(input: PlanNarrativeInput): PlanNarrative {
     paragraphs: [
       `${subject} ${savingClause} ${retirementClause}. ${growthClause}`,
       `By age ${householdRetirementAge}, the household portfolio is projected to reach about ${money(portfolioAtRetirement)} ${basis}.${saleSentence} ${comparison}${giftSentence}`,
-      `That supports about ${money(projectedAnnualIncome)} a year before tax and ${money(afterTaxAnnualIncome)} after tax, against ${goalClause}.${guaranteedSentence}${taxSentence}${leverSentence}`,
+      `That supports about ${money(projectedAnnualIncome)} a year before tax, levelized over retirement, and ${money(afterTaxAnnualIncome)} after tax in the first year, against ${goalClause}.${guaranteedSentence}${taxSentence}${leverSentence}`,
     ],
   }
 }

@@ -4,7 +4,8 @@ import { useAssumptions } from './AssumptionsContext'
 import { usePlanStore } from './PlanStoreContext'
 import {
   compilePlan,
-  deterministicPath,
+  planPath,
+  shiftedDeterministicPath,
   simulate,
   toCashFlowRows,
   toProjectionData,
@@ -58,11 +59,15 @@ export function ProjectionProvider({ children }: { children: ReactNode }) {
   const compiledPlan = useMemo(() => compilePlan(activePlan, { startYear: nowYear }), [activePlan, nowYear])
   const runAt = useMemo(() => (returnPct: number) => simulate(
     compiledPlan,
-    deterministicPath(compiledPlan.years, returnPct, compiledPlan.inflationPct),
+    planPath(compiledPlan, returnPct),
   ), [compiledPlan])
   const simulation = useMemo(() => runAt(expectedReturn), [runAt, expectedReturn])
-  const conservativeSimulation = useMemo(() => runAt(Math.max(0, expectedReturn - 2)), [runAt, expectedReturn])
-  const optimisticSimulation = useMemo(() => runAt(expectedReturn + 2), [runAt, expectedReturn])
+  const runShifted = useMemo(() => (shiftPct: number) => simulate(
+    compiledPlan,
+    shiftedDeterministicPath(compiledPlan, expectedReturn + shiftPct, compiledPlan.inflationPct, shiftPct),
+  ), [compiledPlan, expectedReturn])
+  const conservativeSimulation = useMemo(() => runShifted(-2), [runShifted])
+  const optimisticSimulation = useMemo(() => runShifted(2), [runShifted])
 
   // The household starts drawing down when its last member retires. Ages on
   // this axis are the youngest person's, as in the original app.
@@ -73,7 +78,7 @@ export function ProjectionProvider({ children }: { children: ReactNode }) {
   const retirementSpendingTarget = spendingTargetOf(compiledPlan, simulation)
   // Benefits come from the simulation, so residence, start ages, deaths and
   // partial indexation are all as projected. Plan-start dollars.
-  const retirementRow = simulation.rows[compiledPlan.drawdownStartOffset]
+  const retirementRow = simulation.rows[compiledPlan.headlineOffset]
   const atRetirement = (pick: (p: YearRow['people'][number]) => number) =>
     (retirementRow ? retirementRow.people.reduce((sum, p) => sum + pick(p), 0) / retirementRow.cpi : 0)
   const totalAnnualPension = atRetirement(p => p.pension)
@@ -85,7 +90,7 @@ export function ProjectionProvider({ children }: { children: ReactNode }) {
   const totalAnnualContributions = activePlan.accounts.reduce((sum, acc) => sum + (acc.contributions[0]?.amount ?? 0), 0)
 
   const guaranteedIncomeSchedule = useMemo(
-    () => simulation.rows.slice(compiledPlan.drawdownStartOffset).map(row => row.guaranteedIncome / row.cpi),
+    () => simulation.rows.slice(compiledPlan.drawdownStartOffset).map(row => row.guaranteedIncome / row.cpi / row.periodFraction),
     [simulation.rows, compiledPlan.drawdownStartOffset]
   )
   const propertySaleSchedule = useMemo(

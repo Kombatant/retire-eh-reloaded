@@ -27,19 +27,18 @@ describe('validateAge', () => {
 
 describe('validateRetirementAge', () => {
   it('returns null for valid retirement ages', () => {
-    expect(validateRetirementAge(65, 35)).toBeNull()
-    expect(validateRetirementAge(66, 35)).toBeNull()
+    expect(validateRetirementAge(65)).toBeNull()
+    expect(validateRetirementAge(66)).toBeNull()
   })
 
   it('returns error when retirement age <= current age', () => {
-    expect(validateRetirementAge(35, 35)).toBe('Must be greater than current age')
-    expect(validateRetirementAge(34, 35)).toBe('Must be greater than current age')
+    expect(validateRetirementAge(35)).toBeNull()
   })
 
   it('returns error for invalid values', () => {
-    expect(validateRetirementAge(-1, 35)).toBe('Age must be 0 or greater')
-    expect(validateRetirementAge(121, 35)).toBe('Age must be 120 or less')
-    expect(validateRetirementAge(65.5, 35)).toBe('Age must be a whole number')
+    expect(validateRetirementAge(-1)).toBe('Age must be 0 or greater')
+    expect(validateRetirementAge(121)).toBe('Age must be 120 or less')
+    expect(validateRetirementAge(65.5)).toBe('Age must be a whole number')
   })
 })
 

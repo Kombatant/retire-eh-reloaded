@@ -44,17 +44,36 @@ function needsRefresh(plan: PlanV2): boolean {
 
 type PlanUpdater = (planId: string, fn: (p: PlanV2) => PlanV2) => void
 
-// The response is applied to the plan that asked, even if another plan is
-// open by the time it arrives.
-async function runRefresh(plan: PlanV2, update: PlanUpdater) {
+// One refresh runs at a time, as the providers' rate limits need; another plan
+// that asks meanwhile waits its turn. The response is applied to the plan that
+// asked, even if another plan is open by the time it arrives.
+const waiting = new Map<string, { plan: PlanV2; update: PlanUpdater }>()
+
+export async function runRefresh(plan: PlanV2, update: PlanUpdater): Promise<void> {
   const symbols = symbolsIn(plan)
+  if (symbols.length === 0) return
+  if (status.refreshing) {
+    waiting.set(plan.id, { plan, update })
+    return
+  }
+  autoRefreshed.add(plan.id)
   const { provider, apiKey } = status.settings
-  if (symbols.length === 0 || status.refreshing) return
   setStatus({ refreshing: true })
-  const result = await refreshQuotes(symbols, provider, apiKey)
-  const fetchedAt = new Date().toISOString()
-  if (result.usdCad || Object.keys(result.prices).length > 0) update(plan.id, p => applyQuotes(p, result.prices, fetchedAt, result.usdCad))
-  setStatus({ refreshing: false, errors: result.errors, rateError: null, lastRun: fetchedAt })
+  try {
+    const result = await refreshQuotes(symbols, provider, apiKey)
+    const fetchedAt = new Date().toISOString()
+    if (result.usdCad || Object.keys(result.prices).length > 0) update(plan.id, p => applyQuotes(p, result.prices, fetchedAt, result.usdCad))
+    setStatus({ errors: result.errors, rateError: null, lastRun: fetchedAt })
+  } catch (error) {
+    setStatus({ rateError: error instanceof Error ? error.message : 'Could not refresh prices.' })
+  } finally {
+    setStatus({ refreshing: false })
+    const [next] = waiting.values()
+    if (next) {
+      waiting.delete(next.plan.id)
+      void runRefresh(next.plan, next.update)
+    }
+  }
 }
 
 // The exchange rate alone: the Bank of Canada needs no API key.
@@ -64,9 +83,11 @@ async function runRateRefresh(planId: string, update: PlanUpdater) {
   try {
     const { rate, asOf } = await fetchUsdCad()
     update(planId, p => setUsdCad(p, rate, asOf))
-    setStatus({ refreshing: false, rateError: null })
+    setStatus({ rateError: null })
   } catch (error) {
-    setStatus({ refreshing: false, rateError: error instanceof Error ? error.message : 'Could not get the exchange rate.' })
+    setStatus({ rateError: error instanceof Error ? error.message : 'Could not get the exchange rate.' })
+  } finally {
+    setStatus({ refreshing: false })
   }
 }
 
@@ -93,7 +114,6 @@ export function useAutoRefreshQuotes() {
   useEffect(() => {
     if (!settings.autoRefresh || !settings.apiKey || autoRefreshed.has(activePlan.id)) return
     if (!needsRefresh(activePlan)) return
-    autoRefreshed.add(activePlan.id)
     void runRefresh(activePlan, updatePlan)
   }, [activePlan, updatePlan, settings])
 }

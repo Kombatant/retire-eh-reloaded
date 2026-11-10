@@ -6,6 +6,10 @@ export interface GisPerson {
   // withdrawals are not income). Employment income gets an exemption.
   otherIncome: number
   employmentIncome: number
+  // For the Allowances, which depend on age, residence and having been widowed.
+  age?: number
+  residencyYears?: number
+  widowed?: boolean
 }
 
 // Employment exemption: the first $5,000 and half of the next $10,000.
@@ -17,30 +21,58 @@ function countable(p: GisPerson, data: TaxYearData): number {
   return Math.max(0, p.otherIncome + employment - exempt)
 }
 
-// Annual GIS in plan-start dollars for each person (single or couple).
+function annualFrom(table: [number, number][], income: number): number {
+  if (income >= table[table.length - 1][0]) return 0
+  for (let i = 1; i < table.length; i++) {
+    const [x1, y1] = table[i]
+    if (income > x1) continue
+    const [x0, y0] = table[i - 1]
+    return Math.max(0, y0 + ((y1 - y0) * (income - x0)) / (x1 - x0)) * 12
+  }
+  return 0
+}
+
+// Three dollars a month: how closely the break points follow the tables.
+const TABLE_ROUNDING = 36
+
+function eligibleForAllowance(p: GisPerson, data: TaxYearData): boolean {
+  const g = data.gis
+  return p.age !== undefined && p.age >= g.allowanceMinAge && p.age <= g.allowanceMaxAge && (p.residencyYears ?? 0) >= g.allowanceMinResidencyYears
+}
+
+// Annual GIS or Allowance in plan-start dollars for each person (single or
+// couple), from the published tables. Partial OAS isn't reflected: the tables
+// are for a full pension, so a partial pensioner's GIS is on the low side.
 //
-// Simplification: the real schedule reduces the benefit by $1 per $2 of
-// income (singles) or $1 per $4 of combined income (couples), plus a faster
-// reduction of the top-up portion. We interpolate linearly from the maximum
-// benefit at zero income to zero at the published income cutoff, which
-// matches both end points of the official tables. GIS is based on the
-// previous year's income; we use the current year's, assuming stable income.
+// A younger spouse's age alone doesn't change the couple's status. Where the
+// Allowance applies the couple takes the better of the two published tables,
+// so it never lowers what the household would get without it.
 export function gisAnnual(people: GisPerson[], data: TaxYearData = getTaxYear()): number[] {
   const g = data.gis
   if (people.length === 0) return []
-  if (people.length === 1 || people.length > 2) {
+  if (people.length !== 2) {
     return people.map(p => {
-      if (!p.receivesOas) return 0
-      return Math.max(0, g.single.maxAnnual * (1 - countable(p, data) / g.single.incomeCutoff))
+      if (p.receivesOas) return annualFrom(g.single, countable(p, data))
+      return p.widowed && eligibleForAllowance(p, data) ? annualFrom(g.survivorAllowance, countable(p, data)) : 0
     })
   }
   const combined = countable(people[0], data) + countable(people[1], data)
-  const bothOas = people[0].receivesOas && people[1].receivesOas
-  return people.map(p => {
-    if (!p.receivesOas) return 0
-    if (bothOas) {
-      return Math.max(0, g.coupleBothOas.maxAnnualEach * (1 - combined / g.coupleBothOas.combinedCutoff))
+  if (people[0].receivesOas && people[1].receivesOas) return people.map(() => annualFrom(g.coupleBothOas, combined))
+  if (!people[0].receivesOas && !people[1].receivesOas) return [0, 0]
+
+  const pensioner = people[0].receivesOas ? 0 : 1
+  const alone = annualFrom(g.coupleSpouseNoOas, combined)
+  const result = [0, 0]
+  result[pensioner] = alone
+  if (eligibleForAllowance(people[1 - pensioner], data)) {
+    const gis = annualFrom(g.couplePensionerWithAllowance, combined)
+    const allowance = annualFrom(g.coupleAllowance, combined)
+    // Near the top of the range the two tables pay a couple the same; the
+    // tolerance keeps the break points' rounding from choosing between them.
+    if (gis + allowance >= alone - TABLE_ROUNDING) {
+      result[pensioner] = gis
+      result[1 - pensioner] = allowance
     }
-    return Math.max(0, g.coupleSpouseNoOas.maxAnnual * (1 - combined / g.coupleSpouseNoOas.combinedCutoff))
-  })
+  }
+  return result
 }

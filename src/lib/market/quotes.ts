@@ -7,16 +7,18 @@
 
 export type QuoteProvider = 'twelvedata' | 'alphavantage'
 
-export const QUOTE_PROVIDERS: Record<QuoteProvider, { name: string; keyUrl: string; note: string }> = {
+export const QUOTE_PROVIDERS: Record<QuoteProvider, { name: string; keyUrl: string; note: string; minIntervalMs: number }> = {
   twelvedata: {
     name: 'Twelve Data',
     keyUrl: 'https://twelvedata.com/pricing',
     note: 'Free key: 800 requests a day, 8 a minute. US and TSX symbols.',
+    minIntervalMs: 8000,
   },
   alphavantage: {
     name: 'Alpha Vantage',
     keyUrl: 'https://www.alphavantage.co/support/#api-key',
     note: 'Free key: 25 requests a day.',
+    minIntervalMs: 1200,
   },
 }
 
@@ -176,7 +178,7 @@ export async function refreshQuotes(
   opts: { fetchImpl?: FetchLike; delayMs?: number } = {},
 ): Promise<RefreshResult> {
   const fetchImpl = opts.fetchImpl ?? fetch
-  const delay = opts.delayMs ?? 300
+  const delay = opts.delayMs ?? QUOTE_PROVIDERS[provider].minIntervalMs
   const unique = [...new Set(symbols.map(s => s.trim().toUpperCase()).filter(Boolean))]
   const result: RefreshResult = { prices: {}, errors: {} }
   if (unique.length === 0) return result

@@ -37,7 +37,8 @@ describe('non-registered accounts', () => {
     })
     const withYield = simulatePlan(make(3), flat).result.rows[0]
     const noYield = simulatePlan(make(0), flat).result.rows[0]
-    expect(withYield.investmentIncome).toBeCloseTo(15000, 6)
+    // 3% of what stays invested after the 4% withdrawal at the start of the year.
+    expect(withYield.investmentIncome).toBeCloseTo(14400, 6)
     expect(withYield.tax).toBeGreaterThan(noYield.tax + 1000)
     // Reinvested distributions raise the cost base, so less of each sale is gain.
     expect(withYield.realizedGains).toBeLessThan(noYield.realizedGains + 1e-9)
@@ -76,7 +77,7 @@ describe('FHSA', () => {
 })
 
 describe('contribution room', () => {
-  it('carries TFSA room forward and flags over-contributions', () => {
+  it('carries room forward and keeps contributions within it', () => {
     const p = plan({
       people: [person(40, 65, { room: { tfsa: 10000, rrsp: 0 } })],
       accounts: [
@@ -87,10 +88,12 @@ describe('contribution room', () => {
     })
     const rows = simulatePlan(p, flat).result.rows
     expect(rows[0].people[0].tfsaRoom).toBeCloseTo(1000, 6)
-    expect(rows[1].people[0].tfsaRoom).toBeCloseTo(1000 + 7000 - 9000, 6)
+    // $8,000 of room in the second year, all used by the $9,000 contribution.
+    expect(rows[1].people[0].tfsaRoom).toBeCloseTo(0, 6)
+    expect(rows[1].excessContributions).toBeCloseTo(1000, 6)
     // RRSP room: none at the start, then 18% of last year's $100k each year.
-    expect(rows[0].people[0].rrspRoom).toBeCloseTo(-10000, 6)
-    expect(rows[1].people[0].rrspRoom).toBeCloseTo(-10000 + 18000 - 10000, 6)
+    expect(rows[0].people[0].rrspRoom).toBeCloseTo(0, 6)
+    expect(rows[1].people[0].rrspRoom).toBeCloseTo(18000 - 10000, 6)
   })
 
   it('does not track room unless a starting amount is given', () => {

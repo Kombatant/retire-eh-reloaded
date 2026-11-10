@@ -10,18 +10,19 @@ A household-first retirement planner for Canadians. Build an RRSP, TFSA, and CPP
 
 ## Features
 
-- **Household-first dashboard** with combined progress across people
-- **Canadian-focused**: RRSP, TFSA, and CPP planning built in
-- **Visual projections** for portfolio growth over time
-- **Goal tracking** against your retirement income target
+- **Household-first dashboard** with one verdict from a year-by-year simulation
+- **Canadian-focused**: 2026 federal and provincial tax, RRSP/RRIF, TFSA, FHSA, LIRA/LIF, CPP/QPP, OAS and GIS
+- **Risk**: Monte Carlo, historical replay and stress tests on the same engine
+- **Proposals** that test changes against your own plan
+- **Tracking** of actual balances against a saved projection
 - **Private by default**: all calculations run in-browser
 - **Fast & lightweight**: pure TypeScript client-side engine with zero loading delay
 
 ## Quick Start
 
 ```bash
-git clone https://github.com/halfguru/retire-eh.git
-cd retire-eh
+git clone https://github.com/kombatant/retire-eh-reloaded.git
+cd retire-eh-reloaded
 npm install
 npm run dev
 ```
@@ -64,7 +65,7 @@ Retirement success is a household outcome. Savings get evaluated jointly regardl
 
 ## What This Doesn't Do
 
-- Bank account linking or real-time market data
+- Bank account linking (stock prices are optional, fetched with your own free API key)
 - FIRE or early-retirement evangelism
 - Non-Canadian retirement accounts (401k, IRA, etc.)
 
