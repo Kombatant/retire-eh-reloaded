@@ -37,6 +37,9 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
             <ul className="space-y-0.5">
               {group.items.map(item => {
                 const active = route.view === item.view
+                // On Plan the highlighted row is the section below, so the parent stays
+                // quiet and the eye lands on one place only.
+                const hasSubnav = item.view === 'plan' && active
                 const Icon = item.icon
                 const target: Route = item.view === 'plan' ? { view: 'plan', sub: 'household' } : { view: item.view }
                 return (
@@ -47,13 +50,17 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
                       aria-current={active ? 'page' : undefined}
                       className={cn(
                         'flex min-h-[36px] items-center gap-2.5 rounded-md px-2 text-sm font-medium transition-colors',
-                        active ? 'bg-surface-muted text-fg' : 'text-fg-secondary hover:bg-surface-muted hover:text-fg',
+                        hasSubnav
+                          ? 'text-fg hover:bg-surface-muted'
+                          : active
+                            ? 'bg-accent-subtle text-accent'
+                            : 'text-fg-secondary hover:bg-surface-muted hover:text-fg',
                       )}
                     >
                       <Icon className={cn('h-4 w-4 shrink-0', active ? 'text-accent' : 'text-fg-muted')} aria-hidden />
                       {item.label}
                     </a>
-                    {item.view === 'plan' && active && (
+                    {hasSubnav && (
                       <ul className="mb-1 ml-[17px] mt-0.5 space-y-0.5 border-l border-border pl-2.5">
                         {PLAN_SECTION_META.map(section => {
                           const current = route.sub === section.id
@@ -65,8 +72,11 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
                                 onClick={go(sectionRoute)}
                                 aria-current={current ? 'step' : undefined}
                                 className={cn(
-                                  'flex min-h-[32px] items-center rounded-md px-2 text-[13px] transition-colors',
-                                  current ? 'font-medium text-accent' : 'text-fg-secondary hover:text-fg',
+                                  'relative flex min-h-[32px] items-center rounded-md px-2 text-[13px] transition-colors',
+                                  // The bar sits over the tree line, marking the current step on it.
+                                  current
+                                    ? 'bg-accent-subtle font-semibold text-accent before:absolute before:-left-[12px] before:inset-y-1 before:w-[3px] before:rounded-full before:bg-accent'
+                                    : 'text-fg-secondary hover:bg-surface-muted hover:text-fg',
                                 )}
                               >
                                 {section.label}
