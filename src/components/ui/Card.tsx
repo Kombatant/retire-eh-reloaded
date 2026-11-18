@@ -31,7 +31,7 @@ interface CardHeaderProps {
 export function CardHeader({ title, description, icon: Icon, actions, className }: CardHeaderProps) {
   return (
     <div className={cn('mb-4 flex flex-wrap items-start justify-between gap-x-4 gap-y-2', className)}>
-      <div className="min-w-0">
+      <div className="min-w-0 flex-[1_1_16rem]">
         <h2 className="flex items-center gap-2 text-[15px] font-semibold text-fg">
           {Icon && <Icon className="h-4 w-4 text-fg-muted" aria-hidden />}
           {title}

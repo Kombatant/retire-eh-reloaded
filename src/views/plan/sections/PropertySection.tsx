@@ -64,7 +64,7 @@ export function PropertySection() {
             {activePlan.properties.map(prop => (
               <ListRow
                 key={prop.id}
-                leading={prop.isPrincipalResidence ? <Badge>Principal residence</Badge> : <Badge>Property</Badge>}
+                badge={prop.isPrincipalResidence ? <Badge>Principal residence</Badge> : <Badge>Property</Badge>}
                 title={prop.label || 'Property'}
                 subtitle={prop.sale ? `${prop.sale.replacementValue > 0 ? 'Downsize' : 'Sell'}: ${describeTimePoint(prop.sale.at, activePlan.people, '')}` : 'Kept for the whole plan'}
                 value={money(prop.value)}

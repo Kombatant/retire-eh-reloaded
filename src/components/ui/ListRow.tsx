@@ -7,8 +7,9 @@ interface ListRowProps {
   title: ReactNode
   // Small line under the title (owner, dates, type).
   subtitle?: ReactNode
-  // Leading badge or swatch.
+  // A small marker, such as an account colour.
   leading?: ReactNode
+  badge?: ReactNode
   // Right-aligned key figures.
   value?: ReactNode
   valueSub?: ReactNode
@@ -22,17 +23,23 @@ interface ListRowProps {
 // One item in an editable list: a compact summary that opens a sheet with the
 // full editor. Keeps long lists scannable instead of showing every field.
 export function ListRow({
-  title, subtitle, leading, value, valueSub, onOpen, openLabel, onRemove, removeLabel = 'Remove', className,
+  title, subtitle, leading, badge, value, valueSub, onOpen, openLabel, onRemove, removeLabel = 'Remove', className,
 }: ListRowProps) {
   const body = (
     <>
       {leading && <div className="shrink-0">{leading}</div>}
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-medium text-fg">{title}</div>
-        {subtitle && <div className="mt-0.5 truncate text-xs text-fg-muted">{subtitle}</div>}
+      <div className={cn(
+        'min-w-0 flex-1',
+        !!badge && 'grid grid-cols-1 items-center gap-y-1 @md:grid-cols-[7.5rem_minmax(0,1fr)] @md:gap-x-3',
+      )}>
+        {badge && <div className="flex [&>*]:whitespace-normal">{badge}</div>}
+        <div className="min-w-0">
+          <div className="wrap-anywhere text-sm font-medium text-fg">{title}</div>
+          {subtitle && <div className="mt-0.5 text-xs text-fg-muted">{subtitle}</div>}
+        </div>
       </div>
       {(value !== undefined || valueSub) && (
-        <div className="shrink-0 text-right">
+        <div className="max-w-[40%] text-right tabular-nums">
           {value !== undefined && <div className="text-sm font-medium text-fg">{value}</div>}
           {valueSub && <div className="mt-0.5 text-xs text-fg-muted">{valueSub}</div>}
         </div>
@@ -70,5 +77,5 @@ export function ListRow({
 
 // Container for ListRows with a consistent frame.
 export function ListFrame({ children, className }: { children: ReactNode; className?: string }) {
-  return <div className={cn('rounded-lg border border-border px-1', className)}>{children}</div>
+  return <div className={cn('@container rounded-lg border border-border px-1', className)}>{children}</div>
 }

@@ -84,7 +84,7 @@ export function IncomeSection() {
                       return (
                         <ListRow
                           key={income.id}
-                          leading={<Badge>{KIND_LABELS[income.kind]}</Badge>}
+                          badge={<Badge>{KIND_LABELS[income.kind]}</Badge>}
                           title={income.label || KIND_LABELS[income.kind]}
                           subtitle={when}
                           value={money(income.amount)}

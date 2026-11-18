@@ -70,7 +70,7 @@ export function SpendingSection() {
   const rowFor = (item: ExpenseItem) => (
     <ListRow
       key={item.id}
-      leading={item.frequency === 'oneTime' ? undefined : <Badge tone={item.essential ? 'neutral' : 'accent'}>{item.essential ? 'Essential' : 'Flexible'}</Badge>}
+      badge={item.frequency === 'oneTime' ? undefined : <Badge tone={item.essential ? 'neutral' : 'accent'}>{item.essential ? 'Essential' : 'Flexible'}</Badge>}
       title={item.label || 'Expense'}
       subtitle={item.frequency === 'oneTime'
         ? describeTimePoint(item.from, activePlan.people, 'Now')
